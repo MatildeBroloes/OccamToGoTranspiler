@@ -1,2 +1,2 @@
 # OccamToGoTranspiler
-Bachelor project, concerning building a transiler form Occam to Go.
+Bachelor project, concerning building a transpiler form Occam to Go.
