@@ -1,0 +1,33 @@
+PROC multiply(CHAN OF INT in, CHAN OF INT out)
+  INT value:
+  SEQ i = 0 FOR 5
+    SEQ 
+      in ? value
+      value := value * 2
+      out ! value
+:
+
+PROC incr(CHAN OF INT in, out)
+  INT v, r:
+  SEQ
+    SEQ i = 0 FOR 5
+      SEQ
+        in ? v
+        r := v + 1
+        out ! r
+:
+
+PROC parallel(CHAN OF BYTE out)
+  INT tmp:
+  CHAN OF INT c1, c2, c3:
+  SEQ
+    PAR
+      multiply(c1, c2)
+      incr(c2, c3)
+      SEQ i = 0 FOR 5
+        SEQ
+          c1 ! i
+          c3 ? tmp
+          out ! (BYTE tmp) + 48
+          out ! 10
+:    
