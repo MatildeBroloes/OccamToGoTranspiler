@@ -2,35 +2,45 @@
 
 module GoAST where
 
-data Value =
+data Val =
     TrueVal | FalseVal
   | IntVal Int
   | StringVal String
-  | ListVal [Value]
-  deriving (Eq, Show, Read)
-
-data Variable =
-    Var VName Value
-  | SVar VName Specifier Value
-  | ZVar VName Specifier
+  | ListVal [Val]
   deriving (Eq, Show, Read)
 
 data Exp =
-    Const Value
-  | List [Exp] 
-  deriving (Eq, Shoe, Read)
+    Const Val
+  | Var VName
+  | Oper Op Exp Exp
+  deriving (Eq, Show, Read)
 
-data CExp =
-    CFor VName Exp -- ??
-  | CIf Exp Exp
-  | CIfElse Exp Exp Exp
+data Cond =
+    CFor
+  | CIfElse
+  | CSwitch
+  | CSelect
+  deriving (Eq, Show, Read) 
+
+data Stmt =
+    SDef Vname Spec Exp
+  | SCond Cond
+  | SGo FName [Exp]
+  | SSend VName Exp
+  | SReceive [VName] Vname
   deriving (Eq, Show, Read)
 
 type VName = String
+type FName = String
 
-type Program = [Statement]
+type Program = [Fun]
 
-data Statement =
-    SDef Definition
-  | SFun Function
+data Fun = FFun FName FArgs [Spec] Body
+  deriving(Eq, Show, Read)
+
+type FArgs = [FArg]
+
+data FArg = Arg [VName] Spec
   deriving (Eq, Show, Read)
+
+type Body = [Stmt]
