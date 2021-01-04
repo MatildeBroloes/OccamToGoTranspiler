@@ -1,22 +1,24 @@
 -- Parser for Occam programs
 module Parser where
 
-import AST
-import Text.ParserCombinators.ReadP
-import Control.Applicative ((<|>))
+import GoAST
+import Text.Parsec hiding (State) -- exports ParseError type (?)
+import Text.Parsec.Indent
+import Control.Monad.State
+
 import Data.Char(isDigit, isAlpha, isAlphaNum, isAscii, isPrint)
 
-type Parser a = ReadP a
-
-type ParseError = String
+-- type IndentParser s u a = IndentParser s u (IndentT m) a
+-- runIndentParser is equivalent to runParser, but for indentation sensitive parser
+type IParser a = IndentParser String () a
 
 -- Helper functions --
-
-lexeme :: Parser a -> Parser a
-lexeme p = do a <- p; skipSpaces; return a
+--- Skips whitespace and comments
+lexeme :: IParser a -> IParser a
+lexeme p = do a <- p; spaces; return a
 
 --- Checks whether a string symbol matches the parser input
-symbol :: String -> Parser ()
+symbol :: String -> IParser ()
 symbol s = lexeme $ do string s; return ()
 
 -- Reserved keywords in Occam
@@ -32,286 +34,189 @@ reserved = ["AFTER", "ALT", "AND", "ANY", "ASM", "AT", "BITAND", "BITNOT", "BITO
 
 -- Terminal symbols --
 --- Name
-pName :: Parser String
-pName = lexeme $ do 
-         c <- satisfy isAlpha
-         cs <- munch (\x -> isAlphaNum x || (x == '.'))
-         n <- look
+pName :: IParser String
+pName = lexeme $ do
+                  c <- letter
+                  cs <- many (alphaNum <|> char '.')
+                  notFollowedBy (alphaNum <|> char '.')
+                  if c:cs `notElem` reserved then return $ c:cs
+                  else fail "Name must not be reserved word"
+
+{-         c <- letter
+         cs <- many (satisfy (\x -> isAlphaNum x || (x == '.')))
+         notFollowedBy (alphaNum <|> char '.')
+         n <- lookAhead
 -- Here, exploit that Haskell is lazy
          if c:cs `notElem` reserved && n == mempty then return $ c:cs
          else
            if c:cs `elem` reserved || (isAlphaNum (head n) || head n == '.') 
-             then pfail
-           else return $ c:cs
+             then fail
+           else return $ c:cs -}
 
 --- Digits (and hex.digits)
-pDigit :: Parser Int
-pDigit = do ds <- munch isDigit
-            return $ read ds
+pDigit :: IParser Int
+pDigit = lexeme $ do ds <- many digit
+                     return $ read ds
 
-hexAlpha :: [Char]
-hexAlpha = ['A', 'B', 'C', 'D', 'E', 'F']
-
-pHex :: Parser String
-pHex = do ds <- munch (\x -> isDigit x || x `elem` hexAlpha)
-          return $ ds 
+pHex :: IParser String
+pHex = lexeme $ do ds <- many hexDigit
+                   return $ ds 
 
 --- Character
-pChar :: Parser Char
+pChar :: IParser Char
 pChar = do
          char '*'
-         char '\''
-         return '\''
+         choice [(do char '\''; return '\''),
+                 (do char '\"'; return '\"'),
+                 (do char '*'; return '*'),
+                 (do char 'n'; return '\n'),
+                 (do char 'N'; return '\n'),
+                 (do char 't'; return '\t'),
+                 (do char 'T'; return '\t'),
+                 (do char 's'; return ' '),
+                 (do char 'S'; return ' ')]
         <|>
         do
-         char '*'
-         char '\"'
-         return '\"'
-        <|>
-        do
-         char '*'
-         char '*'
-         return '*'
-        <|>
-        do
-         char '*'
-         _ <- satisfy (\x -> (x == 'n' || x == 'N'))
-         return '\n'
-        <|>
-        do
-         char '*'
-         _ <- satisfy (\x -> (x == 't' || x == 'T'))
-         return '\t'
-        <|>
-        do
-         char '*'
-         _ <- satisfy (\x -> (x == 's' || x == 'S'))
-         return ' '
--- OBS: need to handle byte literals
-        <|>
-        do
-         c <- get
-         if isAscii c && isPrint c && not ((c == '*' || c == '\'') || c == '\"') then
-           return c
-         else pfail
+         c <- satisfy (\x -> isAscii x && isPrint x && not (x == '\'' || x == '\"'))
+         return c
+--        <?> "Could not parse char"
 
 --- String
-pString :: Parser String
+pString :: IParser String
 pString = do
            symbol "\""
            s <- many (pChar)
            symbol "\""
-           return $ s
-
-
-pCType :: Parser ChannelType
-pCType = do
-          symbol "CHAN"
-          symbol "OF"
-          p <- parseProtocol
-          return $ ChanOf p
-         <|>
-         do
-          symbol "["
-          es <- parseExps
-          symbol "]"
-          ct <- pCType
-          return $ CList es ct
-
-pDType :: Parser DataType
-pDType = do
-          symbol "BOOL"
-          return $ BOOL
-         <|>
-         do
-          symbol "BYTE"
-          return $ BYTE
-         <|>
-         do
-          symbol "INT"
-          return $ INT
-         <|>
-         do
-          symbol "INT16"
-          return $ INT16
-         <|>
-         do
-          symbol "INT32"
-          return $ INT32
-         <|>
-         do
-          symbol "INT64"
-          return $ INT64
-         <|>
-         do
-          symbol "REAL32"
-          return $ BYTE
-         <|>
-         do
-          symbol "REAL64"
-          return $ BYTE
-         <|>
-         do
-          n <- pName
-          return $ DVar n
-         <|>
-         do
-          symbol "["
-          es <- parseExps
-          symbol "]"
-          dt <- pDType
-          return $ DList es dt
-
-pSpecifier :: Parser Specifier
-pSpecifier = do
-              ct <- pCType
-              return $ CType ct
-             <|>
-             do
-              dt <- pDType
-              return $ DType dt
-              
+           return s
 
 -- Parser functions --
+parseDType :: IParser DType
+parseDType = choice [(do symbol "BOOL"; return $ BOOL),
+                     (do symbol "BYTE"; return $ BYTE),
+                     (do symbol "INT"; return $ INT),
+                     (do symbol "INT16"; return $ INT16),
+                     (do symbol "INT32"; return $ INT32),
+                     (do symbol "INT64"; return $ INT64),
+                     (do symbol "REAL32"; return $ REAL32),
+                     (do symbol "REAL64"; return $ REAL64),
+                     (do n <- pName; return $ DVar n)]--,
+--                     (do symbol "[";
+--                         e <- parseExp;
+--                         symbol "]";
+--                         d <- parseDType;
+--                         case d of
+--                           DArray es dt -> return $ DArray e:es dt
+--                           _ -> return $ DArray [e] d )]
+----                         return $ DArray e d)]
 
+parseSpecifier :: IParser Spec
+parseSpecifier = do
+                  symbol "CHAN"
+                  symbol "OF"
+                  dt <- parseDType
+                  return $ Chan dt
+                 <|>
+                 do
+                  dt <- parseDType
+                  return $ Data dt
+              
 --- Parse variable
 ---- Right now this is the same as a Name, for simplicity
 
 --- Parse variables (there must be at least one variable in a list of variables)
-parseVariables :: Parser [Variable]
+parseVariables :: IParser [Exp]
 parseVariables = do
                   v <- pName
-                  symbol ","
-                  vs <- parseVariables
-                  return $ (Var v):vs
-                 <|>
-                 do
-                  v <- pName
-                  return $ [Var v]
+                  choice [(do symbol ","; vs <- parseVariables; return $ (Var v):vs),
+                          (do return $ [Var v])]
 
 --- Parse Expression
-parseExp :: Parser Exp
+parseExp :: IParser Exp
 parseExp = do
-            n <- pName
-            return $ EVar $ Var n
+            string "NOT" -- only monadic operator included in sipmlified subset
+            symbol " "
+            o <- parseOperand
+            return $ Not o
            <|>
            do
-            symbol "("
-            e <- parseExp
-            symbol ")"
-            return $ e
-           <|>
-           do
-            n <- pName
-            symbol "("
-            es <- parseExps
-            symbol ")"
-            return $ List n es
-           <|>
-           do
-            n <- pName
-            symbol "("
-            symbol ")"
-            return $ List n []
+            o1 <- parseOperand
+            choice [(do symbol "+"; o2 <- parseOperand; return $ Oper Plus o1 o2),
+                    (do symbol "-"; o2 <- parseOperand; return $ Oper Minus o1 o2),
+                    (do symbol "*"; o2 <- parseOperand; return $ Oper Times o1 o2),
+                    (do symbol "/"; o2 <- parseOperand; return $ Oper Div o1 o2),
+                    (do symbol "\\"; o2 <- parseOperand; return $ Oper Mod o1 o2),
+                    (do symbol "="; o2 <- parseOperand; return $ Oper Eq o1 o2),
+                    (do symbol "<"; choice [(do symbol ">"; o2 <- parseOperand; return $ Oper Neq o1 o2),
+                                            (do symbol "="; o2 <- parseOperand; return $ Oper Leq o1 o2),
+                                            (do o2 <- parseOperand; return $ Oper Less o1 o2)]),
+                    (do symbol ">"; choice [(do symbol "="; o2 <- parseOperand; return $ Oper Geq o1 o2),
+                                            (do o2 <- parseOperand; return $ Oper Greater o1 o2)]),
+                    (do symbol "AND"; o2 <- parseOperand; return $ Oper And o1 o2),
+                    (do symbol "OR"; o2 <- parseOperand; return $ Oper Or o1 o2),
+                    (do return $ o1),
+                    (do dt <- parseDType; o <- parseOperand; return $ Conv dt o)]
 
---- Parse Expressions
-parseExps :: Parser [Exp]
+-- parse list of 0 or more expressions, separated by commas
+parseExps :: IParser [Exp]
 parseExps = do
              e <- parseExp
-             symbol ","
-             es <- parseExps
-             return $ e:es
-            <|>
-            do
-             e <- parseExp
-             return $ [e]
+             choice [(do symbol ","; es <- parseExps; return $ e:es),
+                     (do return $ [e])]
 
---- Parse formal
-parseFormal :: Parser Formal
-parseFormal = do
-               s <- pSpecifier
-               vs <- parseVariables
-               return $ ZVar vs s
-
---- Parse list of formals
-parseFormals :: Parser [Formal]
-parseFormals = do
-                f <- parseFormal
-                symbol ","
-                fs <- parseFormals
-                return $ f:fs
+parseOperand :: IParser Exp
+parseOperand = do
+                symbol "("
+                e <- parseExp
+                symbol ")"
+                return $ e
                <|>
                do
-                return $ []
+                v <- pName
+                return $ Var v
+               <|>
+               do
+                symbol "#"
+                d <- pHex
+                return $ Const $ HexVal d
+               <|>
+               do
+                d <- pDigit
+                return $ Const $ IntVal d
+--               <|>
+--               do
+--                symbol "*#"
+--                b <- pHex -- should this control that there are only 2 digits in the hex number?
+--                return $ Const $ ByteVal b
+--               <|>
+--               do
+--                s <- pString
+--                return $ Const $ StringVal s
+               <|>
+               do
+                symbol "["
+                symbol "]"
+                return $ List []
+            --    choice [(do es <- parseExps; symbol "]"; return $ List es),
+            --            (do symbol "]"; return $ List [])]
 
---- Parse protocol
-parseProtocol :: Parser Protocol
-parseProtocol = do
-                 n <- pName
-                 return $ ProtName n
-                <|>
-                do
-                 d <- pDType
-                 return $ Simple d
+parseProg :: IParser (Either Int String)
+parseProg = try (do
+                  s <- pName
+                  return $ Right s
+                 <|> 
+                 do
+                  d <- pDigit
+                  return $ Left d)
 
---- Parse process
-parseProc :: Parser Process
-parseProc = do
-             vs <- parseVariables
-             symbol ":="
-             es <- parseExps
-             return $ Asign vs es
-            <|>
-            do
-             s <- parseSeq
-             return $ Seq s
+parseString :: String -> Either ParseError Exp
+parseString s = runIndentParser (do a <- parseExp; eof; return a) () "" s
+-- runIndentParser returns Either ParseError a
 
---- Parse multiple processes in sequence
----- OBS: take indentation into account
-parseProcs :: Parser [Process]
-parseProcs = do
-              p <- parseProc
-              --  \n and indentation?
-              ps <- parseProcs
-              return $ p:ps
-             <|>
-             do
-              return $ []
-
---- Parse sequence
-parseSeq :: Parser Sequence
-parseSeq = do
-            symbol "SEQ"
-            n <- pName
-            symbol "="
-            b <- parseExp
-            symbol "FOR"
-            c <- parseExp
-            p <- parseProc
-            return $ SFor n b c p
-           <|>
-           do
-            symbol "SEQ"
-            ps <- parseProcs
-            return $ SList $ ps
-
------ Parse definition
-parseDef :: Parser Definition
-parseDef = do
-            symbol "PROC"
-            n <- pName
-            symbol "("
-            fs <- parseFormals
-            symbol ")"
-            p <- parseProc
-            return $ Proc n fs p
-
---parseProg :: Parser String
-parseProg = undefined
-
-
-parseString :: String -> Either ParseError String -- Program
-parseString s = case readP_to_S (do a <- parseProg; eof; return a) s of
-                  [] -> Left "No parse"
-                  [(a, _)] -> Right a
-                  _ -> Left "Parsing was ambiguous"
+-- readFile :: String -> Either ParseError String
+-- readFile fileName = do
+--                      file <- openFile fileName ReadMode
+--                      contents <- hGetContents file
+--                      case iParse parseProg "test" contents of
+--                        Left err -> putStr err
+--                        Right a -> putStr a
+--                      hClose file
