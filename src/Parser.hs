@@ -171,6 +171,7 @@ parseExps = do
              choice [(do symbol ","; es <- parseExps; return $ e:es),
                      (do return $ [e])]
 
+--- TODO: use try to ensure all necessary branches are covered
 parseOperand :: IParser Exp
 parseOperand = do
                 symbol "("
@@ -196,6 +197,14 @@ parseOperand = do
                 symbol "*#"
                 b <- pHex -- should this control that there are only 2 digits in the hex number?
                 return $ Const $ ByteVal b
+               <|>
+               do
+                symbol "TRUE"
+                return $ Const TrueVal
+               <|>
+               do
+                symbol "FALSE"
+                return $ Const FalseVal
                <|>
                do
                 v <- pName
@@ -257,11 +266,38 @@ parseAsgn = do
              es <- parseExps
              return $ SDef vs es
 
-parseCond :: IParser Stmt
-parseCond = undefined
+parseSeq :: IParser Stmt
+parseSeq = do
+            s <- withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
+            return $ s
 
-parseLoop :: IParser Stmt
-parseLoop = undefined
+parseIf :: IParser Stmt
+parseIf = do 
+           s <- withBlock SIf (do symbol "IF"; return "if") parseCond
+           return $ s
+
+parseCond :: IParser Stmt
+parseCond = do
+             c <- withBlock SCond parseExp parseProcess
+             return $ c
+
+parseCase :: IParser Stmt
+parseCase = do
+             s <- withBlock SSwitch (do symbol "CASE"; parseExp) parseOpt
+             return $ s
+
+parseOpt :: IParser Stmt
+parseOpt = try (do
+                 o <- withBlock SCond (do symbol "ELSE"; return $ Const TrueVal) parseProcess
+                 -- it is probably not necessary to unpack the result of withBlock 
+                 return $ o)
+                <|>
+                try parseCond
+
+parseWhile :: IParser Stmt
+parseWhile = do
+              s <- withBlock SWhile (do symbol "WHILE"; parseExp) parseProcess
+              return $ s
 
 parsePar :: IParser Stmt
 parsePar = undefined
@@ -272,14 +308,9 @@ parseAlt = undefined
 parseInOut :: IParser Stmt
 parseInOut = undefined
 
-parseSelection :: IParser Stmt
-parseSelection = undefined
-
-parseSeq :: IParser Stmt
-parseSeq = undefined
-
 parseProcess :: IParser Stmt
-parseProcess = try parseDecl <|> parseAsgn
+parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|> 
+               try parseWhile <|> try parseDecl <|> parseAsgn
 
 parseProc :: IParser Fun
 parseProc = do
@@ -287,6 +318,7 @@ parseProc = do
              -- spaces/lexeme?
              return p -- the procedure header and body should be wrapped accordingly
 
+-- Def is PROCedure or FUNCtion (in simplified version)
 parseDef :: IParser Fun
 parseDef = undefined
 
@@ -302,7 +334,7 @@ parseProg = do
              parseDefs
 
 parseString :: Either ParseError Fun
-parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text2 --s
+parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text6 --s
 -- runIndentParser returns Either ParseError a
 
 -- readFile :: String -> Either ParseError String
@@ -324,5 +356,42 @@ input_text2 :: String
 input_text2 = unlines ["PROC test2 (INT a, b, c)",
                        "  INT x, y, z:",
                        "  a,b := 1,2"
+                      ]
+
+input_text3 :: String
+input_text3 = unlines ["PROC test3 (INT a, b, c)",
+                       "  INT x, y, z:",
+                       "  SEQ",
+                       "    a := 1",
+                       "    b := 2"
+                      ]
+
+input_text4 :: String
+input_text4 = unlines ["PROC test4 (INT a, b, c)",
+                       "  INT x, y, z:",
+                       "  IF",
+                       "    a <= b",
+                       "      SEQ",
+                       "        a := 1"
+                      ]
+
+input_text5 :: String
+input_text5 = unlines ["PROC test5 (INT a,b)",
+                       "  CASE a",
+                       "    a <= b",
+                       "      SEQ",
+                       "        a := a + 1",
+                       "        b := b - 1",
+                       "    ELSE",
+                       "      a := a - 1"
+                      ]
+
+input_text6 :: String
+input_text6 = unlines ["PROC test6 (INT a,b)",
+                       "  WHILE a < b",
+                       "    SEQ",
+                       "      a := a + 1",
+                       "  BOOL test:",
+                       "  test := TRUE"
                       ]
 
