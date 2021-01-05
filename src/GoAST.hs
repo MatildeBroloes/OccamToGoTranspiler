@@ -33,7 +33,8 @@ data Cond =
   deriving (Eq, Show, Read) 
 
 data Stmt =
-    SDef VName Spec Exp
+    SDef [Exp] [Exp]
+  | SDecl [Exp] Spec
   | SCond Cond
   | SGo FName [Exp]
   | SSend VName Exp
@@ -59,12 +60,13 @@ data Op = Plus | Minus | Times | Div | Mod | Eq | Neq | Less | Greater | Geq | L
 
 type Program = [Fun]
 
-data Fun = FFun FName FArgs [Spec] Body
+data Fun = FFun (FName, FArgs, [Spec]) Body
   deriving(Eq, Show, Read)
 
 type FArgs = [FArg]
 
-data FArg = Arg [VName] Spec
+data FArg = Arg [Exp] Spec
   deriving (Eq, Show, Read)
 
 type Body = [Stmt]
+
