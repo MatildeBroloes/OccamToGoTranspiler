@@ -3,7 +3,7 @@
 module GoAST where
 
 data Val =
-    TrueVal | FalseVal
+    TrueVal | FalseVal | NoneVal
   | IntVal Int
   | RealVal Float
   | HexVal String
@@ -15,7 +15,9 @@ data Val =
 data Exp =
     Const Val
   | Var VName
+  | Chan VName
   | Oper Op Exp Exp
+  | Guard Exp Stmt
   | Not Exp
   | List [Exp]
   | Conv DType Exp -- conversion, fx BYTE x for converting x to byte
@@ -45,19 +47,22 @@ data Stmt =
   | SSwitch Exp [Stmt] -- a selector, and a number of options
   | SWhile Exp [Stmt] -- a boolean and a process
   | SCond Exp [Stmt] -- a boolean and a process
-  | SGo FName [Exp]
-  | SSend VName Exp
-  | SReceive [VName] VName
+  | SGo String [Stmt]
+  | SCall FName [Exp] -- name of procedure, list of args
+  | SSelect String [Stmt]
+  | SCase Stmt [Stmt] -- for cases in a select that are not just conditions?
+  | SSend Exp Exp -- first exp is where to send, second is message
+  | SReceive Exp Exp -- first is whre to save message (can be NoneVal), second is which channel
   deriving (Eq, Show, Read)
 
 data Spec =
-    Data DType
-  | Chan DType
+    SVar DType
+  | SChan DType
   deriving (Eq, Show, Read)
 
 data DType = BOOL | BYTE | INT | INT16 | INT32 | INT64 | REAL32 | REAL64
-  | DVar VName
-  | DArray [Int] DType
+--  | DVar VName
+--  | DArray [Int] DType
   deriving (Eq, Show, Read)
 
 type VName = String

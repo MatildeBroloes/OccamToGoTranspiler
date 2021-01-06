@@ -92,14 +92,15 @@ pString = do
 -- Parser functions --
 parseDType :: IParser DType
 parseDType = 
-  choice [(do string "BOOL"; notFollowedBy (alphaNum <|> char '.'); return $ BOOL),
-    (do string "BYTE"; notFollowedBy (alphaNum <|> char '.'); return $ BYTE),
-    (do string "INT"; notFollowedBy (alphaNum <|> char '.'); return $ INT),
-    (do string "INT16"; notFollowedBy (alphaNum <|> char '.'); return $ INT16),
-    (do string "INT32"; notFollowedBy (alphaNum <|> char '.'); return $ INT32),
-    (do string "INT64"; notFollowedBy (alphaNum <|> char '.'); return $ INT64),
-    (do string "REAL32"; notFollowedBy (alphaNum <|> char '.'); return $ REAL32),
-    (do string "REAL64"; notFollowedBy (alphaNum <|> char '.'); return $ REAL64)]
+  try (do string "BOOL"; notFollowedBy (alphaNum <|> char '.'); return $ BOOL) <|>
+  try (do string "BYTE"; notFollowedBy (alphaNum <|> char '.'); return $ BYTE) <|>
+  try (do string "INT"; notFollowedBy (alphaNum <|> char '.'); return $ INT) <|>
+  try (do string "INT16"; notFollowedBy (alphaNum <|> char '.'); return $ INT16) <|>
+  try (do string "INT32"; notFollowedBy (alphaNum <|> char '.'); return $ INT32) <|>
+  try (do string "INT64"; notFollowedBy (alphaNum <|> char '.'); return $ INT64) <|>
+  try (do string "REAL32"; notFollowedBy (alphaNum <|> char '.'); return $ REAL32) <|>
+  try (do string "REAL64"; notFollowedBy (alphaNum <|> char '.'); return $ REAL64) <?>
+  "data type"
 --    (do n <- pName; return $ DVar n)]--, // how to include this rule? should it be left out for simplicity?
 --                     (do symbol "[";
 --                         e <- parseExp;
@@ -115,17 +116,23 @@ parseSpecifier = do
                   symbol "CHAN"
                   symbol "OF"
                   dt <- parseDType
-                  return $ Chan dt
+                  return $ SChan dt
                  <|>
                  do
                   dt <- parseDType
-                  return $ Data dt
+                  return $ SVar dt
               
 --- Parse variable
 parseVar :: IParser Exp
 parseVar = do
             v <- pName
             return $ Var v
+
+--- Parse channe
+parseChan :: IParser Exp
+parseChan = do
+             c <- pName
+             return $ Chan c
 
 --- Parse variables (there must be at least one variable in a list of variables)
 parseVariables :: IParser [Exp]
@@ -141,13 +148,13 @@ parseExp = try (do
                  v <- parseOperand
                  return $ Conv dt v)
                <|>
-               (do
+           try (do
                  string "NOT" -- only monadic operator included in simplified subset
                  symbol " "
                  o <- parseOperand
                  return $ Not o)
                <|>
-               (do
+           try (do
                  o1 <- parseOperand
                  choice [(do symbol "+"; o2 <- parseOperand; return $ Oper Plus o1 o2),
                          (do symbol "-"; o2 <- parseOperand; return $ Oper Minus o1 o2),
@@ -173,46 +180,46 @@ parseExps = do
 
 --- TODO: use try to ensure all necessary branches are covered
 parseOperand :: IParser Exp
-parseOperand = do
-                symbol "("
-                e <- parseExp
-                symbol ")"
-                return $ e
-               <|>
-               do
-                symbol "["
-                es <- (do symbol "]"; return $ []) <|> (do a <- parseExps; symbol "]"; return a)
-                return $ List es
-               <|>
-               do
-                symbol "#"
-                d <- pHex
-                return $ Const $ HexVal d
-               <|>
-               do
-                s <- pString
-                return $ Const $ StringVal s
-               <|>
-               do
-                symbol "*#"
-                b <- pHex -- should this control that there are only 2 digits in the hex number?
-                return $ Const $ ByteVal b
-               <|>
-               do
-                symbol "TRUE"
-                return $ Const TrueVal
-               <|>
-               do
-                symbol "FALSE"
-                return $ Const FalseVal
-               <|>
-               do
-                v <- pName
-                return $ Var v
-               <|>
-               do
-                d <- pDigit
-                return $ Const $ IntVal d
+parseOperand = try (do
+                     symbol "("
+                     e <- parseExp
+                     symbol ")"
+                     return $ e)
+                   <|>
+               try (do
+                     symbol "["
+                     es <- (do symbol "]"; return $ []) <|> (do a <- parseExps; symbol "]"; return a)
+                     return $ List es)
+                   <|>
+               try (do
+                     symbol "#"
+                     d <- pHex
+                     return $ Const $ HexVal d)
+                   <|>
+               try (do
+                     s <- pString
+                     return $ Const $ StringVal s)
+                   <|>
+               try (do
+                     symbol "*#"
+                     b <- pHex -- should this control that there are only 2 digits in the hex number?
+                     return $ Const $ ByteVal b)
+                   <|>
+               try (do
+                     symbol "TRUE"
+                     return $ Const TrueVal)
+                   <|>
+               try (do
+                     symbol "FALSE"
+                     return $ Const FalseVal)
+                   <|>
+               try (do
+                     v <- pName
+                     return $ Var v)
+                   <|>
+                   do
+                    d <- pDigit
+                    return $ Const $ IntVal d
 
 --- OBS: arguments kan kun være af 1 data type - fiks dette senere!!
 argVars :: IParser [Exp]
@@ -300,17 +307,60 @@ parseWhile = do
               return $ s
 
 parsePar :: IParser Stmt
-parsePar = undefined
+parsePar = do
+            s <- withBlock SGo (do symbol "PAR"; return "par") (try parseCall <|> parseProcess)
+            return $ s
+
+parseCall :: IParser Stmt
+parseCall = do
+             fname <- pName
+             symbol "("
+             args <- try parseExps <|> (do return [])
+             symbol ")"
+             return $ SCall fname args
 
 parseAlt :: IParser Stmt
-parseAlt = undefined
+parseAlt = do
+            s <- withBlock SSelect (do symbol "ALT"; return "alt") parseAlternative
+            return $ s
 
-parseInOut :: IParser Stmt
-parseInOut = undefined
+parseAlternative :: IParser Stmt
+parseAlternative = try (withBlock SCase parseIn parseProcess) <|>
+                   try (withBlock SCond parseGuard parseProcess) <?>
+                   "alternative"
+
+parseGuard :: IParser Exp
+parseGuard = try (do
+                   b <- parseExp
+                   symbol "&"
+                   i <- parseIn
+                   return $ Guard b i) <|>
+             try (do
+                   b <- parseExp -- should there be a seperate parser for boolean expressions?
+                   symbol "&"
+                   symbol "SKIP"
+                   return $ b) <?>
+             "guard"
+
+parseIn :: IParser Stmt
+parseIn = do
+           c <- parseChan
+           symbol "?"
+           try (do v <- parseVar; return $ SReceive c v) <|>
+                do return $ SReceive c $ Const NoneVal
+
+parseOut :: IParser Stmt
+parseOut = do
+            c <- parseChan
+            symbol "!"
+            msg <- parseExp
+            return $ SSend c msg
 
 parseProcess :: IParser Stmt
 parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|> 
-               try parseWhile <|> try parseDecl <|> parseAsgn
+               try parseWhile <|> try parseDecl <|> try parsePar <|>
+               try parseIn <|> try parseOut <|> try parseAlt <|>
+               try parseAsgn <?> "process"
 
 parseProc :: IParser Fun
 parseProc = do
@@ -334,7 +384,7 @@ parseProg = do
              parseDefs
 
 parseString :: Either ParseError Fun
-parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text6 --s
+parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text9
 -- runIndentParser returns Either ParseError a
 
 -- readFile :: String -> Either ParseError String
@@ -393,5 +443,31 @@ input_text6 = unlines ["PROC test6 (INT a,b)",
                        "      a := a + 1",
                        "  BOOL test:",
                        "  test := TRUE"
+                      ]
+
+input_text7 :: String
+input_text7 = unlines ["PROC test7 (CHAN OF INT a)",
+                       "  INT tmp:",
+                       "  a ! (BYTE a)",
+                       "  a ? tmp"
+                      ]
+
+input_text8 :: String
+input_text8 = unlines ["PROC test8 (CHAN OF INT a)",
+                       "  PAR",
+                       "    a ! (BYTE a)",
+                       "    a ? tmp",
+                       "    square(a)",
+                       "    print (\"hej\")"
+                      ]
+
+input_text9 :: String
+input_text9 = unlines ["PROC test9 (CHAN OF INT c1, c2, out)",
+                       "  INT a,b:",
+                       "  ALT",
+                       "    c1 ? a",
+                       "      out ! a",
+                       "    c2 ? b",
+                       "      out ! b"
                       ]
 
