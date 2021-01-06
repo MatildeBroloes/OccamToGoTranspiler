@@ -18,6 +18,7 @@ data Exp =
   | Chan VName
   | Oper Op Exp Exp
   | Guard Exp Stmt
+  | Call FName [Exp]
   | Not Exp
   | List [Exp]
   | Conv DType Exp -- conversion, fx BYTE x for converting x to byte
@@ -39,20 +40,22 @@ data Exp =
 --  | CSelect -- svarer til en select?
 --  deriving (Eq, Show, Read) 
 
-data Stmt =
+data Stmt = -- here, a statement is almost equivalent to a process in Occam
     SDef [Exp] [Exp]
-  | SDecl [Exp] Spec
+  | SDecl [Exp] Spec Stmt
   | SSeq String [Stmt] -- evt lav disse til 1 type, hvor String siger hvilken slags
   | SIf String [Stmt]
   | SSwitch Exp [Stmt] -- a selector, and a number of options
   | SWhile Exp [Stmt] -- a boolean and a process
   | SCond Exp [Stmt] -- a boolean and a process
   | SGo String [Stmt]
-  | SCall FName [Exp] -- name of procedure, list of args
+  | SCall Exp
   | SSelect String [Stmt]
   | SCase Stmt [Stmt] -- for cases in a select that are not just conditions?
   | SSend Exp Exp -- first exp is where to send, second is message
-  | SReceive Exp Exp -- first is whre to save message (can be NoneVal), second is which channel
+  | SReceive [Exp] Exp -- first is where to save message (can be NoneVal), second is which channel
+  | SContinue
+  | SExit
   deriving (Eq, Show, Read)
 
 data Spec =
@@ -74,13 +77,11 @@ data Op = Plus | Minus | Times | Div | Mod | Eq | Neq | Less | Greater | Geq | L
 
 type Program = [Fun]
 
-data Fun = FFun (FName, FArgs, [Spec]) Body
+data Fun = FFun (FName, FArgs, [Spec]) Stmt
   deriving(Eq, Show, Read)
 
 type FArgs = [FArg]
 
 data FArg = Arg [Exp] Spec
   deriving (Eq, Show, Read)
-
-type Body = [Stmt]
 

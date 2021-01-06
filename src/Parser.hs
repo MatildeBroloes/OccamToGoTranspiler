@@ -138,8 +138,8 @@ parseChan = do
 parseVariables :: IParser [Exp]
 parseVariables = do
                   v <- parseVar
-                  choice [(do symbol ","; vs <- parseVariables; return $ v:vs),
-                          (do return $ [v])]
+                  try (do symbol ","; vs <- parseVariables; return $ v:vs)
+                    <|> (do return $ [v])
 
 --- Parse Expression
 parseExp :: IParser Exp
@@ -156,20 +156,20 @@ parseExp = try (do
                <|>
            try (do
                  o1 <- parseOperand
-                 choice [(do symbol "+"; o2 <- parseOperand; return $ Oper Plus o1 o2),
-                         (do symbol "-"; o2 <- parseOperand; return $ Oper Minus o1 o2),
-                         (do symbol "*"; o2 <- parseOperand; return $ Oper Times o1 o2),
-                         (do symbol "/"; o2 <- parseOperand; return $ Oper Div o1 o2),
-                         (do symbol "\\"; o2 <- parseOperand; return $ Oper Mod o1 o2),
-                         (do symbol "="; o2 <- parseOperand; return $ Oper Eq o1 o2),
-                         (do symbol "<"; choice [(do symbol ">"; o2 <- parseOperand; return $ Oper Neq o1 o2),
-                                                 (do symbol "="; o2 <- parseOperand; return $ Oper Leq o1 o2),
-                                                 (do o2 <- parseOperand; return $ Oper Less o1 o2)]),
-                         (do symbol ">"; choice [(do symbol "="; o2 <- parseOperand; return $ Oper Geq o1 o2),
-                                                 (do o2 <- parseOperand; return $ Oper Greater o1 o2)]),
-                         (do symbol "AND"; o2 <- parseOperand; return $ Oper And o1 o2),
-                         (do symbol "OR"; o2 <- parseOperand; return $ Oper Or o1 o2),
-                         (do return $ o1)])
+                 try (do symbol "+"; o2 <- parseOperand; return $ Oper Plus o1 o2)
+                   <|> try (do symbol "-"; o2 <- parseOperand; return $ Oper Minus o1 o2)
+                   <|> try (do symbol "*"; o2 <- parseOperand; return $ Oper Times o1 o2)
+                   <|> try (do symbol "/"; o2 <- parseOperand; return $ Oper Div o1 o2)
+                   <|> try (do symbol "\\"; o2 <- parseOperand; return $ Oper Mod o1 o2)
+                   <|> try (do symbol "="; o2 <- parseOperand; return $ Oper Eq o1 o2)
+                   <|> try (do symbol "<>"; o2 <- parseOperand; return $ Oper Neq o1 o2)
+                   <|> try (do symbol "<="; o2 <- parseOperand; return $ Oper Leq o1 o2)
+                   <|> try (do symbol "<"; o2 <- parseOperand; return $ Oper Less o1 o2)
+                   <|> try (do symbol ">="; o2 <- parseOperand; return $ Oper Geq o1 o2)
+                   <|> try (do symbol ">"; o2 <- parseOperand; return $ Oper Greater o1 o2)
+                   <|> try (do symbol "AND"; o2 <- parseOperand; return $ Oper And o1 o2)
+                   <|> try (do symbol "OR"; o2 <- parseOperand; return $ Oper Or o1 o2)
+                   <|> (do return $ o1))
 
 -- parse list of 0 or more expressions, separated by commas
 parseExps :: IParser [Exp]
@@ -180,46 +180,49 @@ parseExps = do
 
 --- TODO: use try to ensure all necessary branches are covered
 parseOperand :: IParser Exp
-parseOperand = try (do
-                     symbol "("
-                     e <- parseExp
-                     symbol ")"
-                     return $ e)
-                   <|>
-               try (do
-                     symbol "["
-                     es <- (do symbol "]"; return $ []) <|> (do a <- parseExps; symbol "]"; return a)
-                     return $ List es)
-                   <|>
-               try (do
-                     symbol "#"
-                     d <- pHex
-                     return $ Const $ HexVal d)
-                   <|>
-               try (do
-                     s <- pString
-                     return $ Const $ StringVal s)
-                   <|>
-               try (do
-                     symbol "*#"
-                     b <- pHex -- should this control that there are only 2 digits in the hex number?
-                     return $ Const $ ByteVal b)
-                   <|>
-               try (do
-                     symbol "TRUE"
-                     return $ Const TrueVal)
-                   <|>
-               try (do
-                     symbol "FALSE"
-                     return $ Const FalseVal)
-                   <|>
-               try (do
-                     v <- pName
-                     return $ Var v)
-                   <|>
-                   do
-                    d <- pDigit
-                    return $ Const $ IntVal d
+parseOperand = 
+  try (do
+        symbol "("
+        e <- parseExp
+        symbol ")"
+        return $ e)
+      <|>
+  try (do
+        symbol "["
+        es <- (do symbol "]"; return $ []) <|> (do a <- parseExps; symbol "]"; return a)
+        return $ List es)
+      <|>
+  try (do
+        symbol "#"
+        d <- pHex
+        return $ Const $ HexVal d)
+      <|>
+  try (do
+        s <- pString
+        return $ Const $ StringVal s)
+      <|>
+  try (do
+        symbol "*#"
+        b <- pHex -- should this control that there are only 2 digits in the hex number?
+        return $ Const $ ByteVal b)
+      <|>
+  try (do
+        symbol "TRUE"
+        return $ Const TrueVal)
+      <|>
+  try (do
+        symbol "FALSE"
+        return $ Const FalseVal)
+      <|>
+  try (do
+        name <- pName
+        try (do symbol "("; args <- try parseExps <|> 
+                                    (do return []); symbol ")"; return $ Call name args)
+          <|> (do return $ Var name))
+      <|>
+      do
+       d <- pDigit
+       return $ Const $ IntVal d
 
 --- OBS: arguments kan kun være af 1 data type - fiks dette senere!!
 argVars :: IParser [Exp]
@@ -258,13 +261,15 @@ parsePHeader = do
                 symbol ")"
                 return $ (n, args, [])
 
-parseDecl :: IParser Stmt
+-- TODO: fix this according to syntax!!!
+parseDecl :: IParser ([Exp], Spec)
 parseDecl = do
              s <- lexeme $ parseSpecifier
              vs <- parseVariables
              symbol ":"
-             return $ SDecl vs s
+             return $ (vs, s)
 
+-- Parsers for different types of processes
 -- OBS: husk at bruge try, så den går ind i alle cases??
 parseAsgn :: IParser  Stmt
 parseAsgn = do
@@ -273,10 +278,34 @@ parseAsgn = do
              es <- parseExps
              return $ SDef vs es
 
+parseIn :: IParser Stmt
+parseIn = do
+           c <- parseChan
+           symbol "?"
+           vs <- parseInputItems
+           return $ SReceive vs c
+
+parseInputItems :: IParser [Exp]
+parseInputItems = do
+                   v <- parseVar
+                   choice [(do symbol ";"; vs <- parseInputItems; return $ v:vs),
+                           (do return $ [v])]
+
+parseOut :: IParser Stmt
+parseOut = do
+            c <- parseChan
+            symbol "!"
+            msg <- parseExp
+            return $ SSend c msg
+
+parseOutputItems :: IParser [Exp]
+parseOutputItems = do
+                    e <- parseExp
+                    choice [(do symbol ";"; es <- parseOutputItems; return $ e:es),
+                            (do return $ [e])]
+
 parseSeq :: IParser Stmt
-parseSeq = do
-            s <- withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
-            return $ s
+parseSeq = withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
 
 parseIf :: IParser Stmt
 parseIf = do 
@@ -308,16 +337,18 @@ parseWhile = do
 
 parsePar :: IParser Stmt
 parsePar = do
-            s <- withBlock SGo (do symbol "PAR"; return "par") (try parseCall <|> parseProcess)
+            s <- withBlock SGo (do symbol "PAR"; return "par") (try parseProcess <|> parseCall)
             return $ s
 
 parseCall :: IParser Stmt
 parseCall = do
-             fname <- pName
-             symbol "("
-             args <- try parseExps <|> (do return [])
-             symbol ")"
-             return $ SCall fname args
+             c <- parseOperand
+             return $ SCall c
+--             fname <- pName
+--             symbol "("
+--             args <- try parseExps <|> (do return [])
+--             symbol ")"
+--             return $ SCall fname args
 
 parseAlt :: IParser Stmt
 parseAlt = do
@@ -342,35 +373,29 @@ parseGuard = try (do
                    return $ b) <?>
              "guard"
 
-parseIn :: IParser Stmt
-parseIn = do
-           c <- parseChan
-           symbol "?"
-           try (do v <- parseVar; return $ SReceive c v) <|>
-                do return $ SReceive c $ Const NoneVal
-
-parseOut :: IParser Stmt
-parseOut = do
-            c <- parseChan
-            symbol "!"
-            msg <- parseExp
-            return $ SSend c msg
 
 parseProcess :: IParser Stmt
 parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|> 
-               try parseWhile <|> try parseDecl <|> try parsePar <|>
+               try parseWhile <|> try parsePar <|> try parseAsgn <|>
                try parseIn <|> try parseOut <|> try parseAlt <|>
-               try parseAsgn <?> "process"
+               try (do (es, s) <- parseDecl; p <- parseProcess; return $ SDecl es s p) <|>
+               try (do symbol "SKIP"; return $ SContinue) <|> 
+               try (do symbol "STOP"; return $ SExit) <?> "process"
 
 parseProc :: IParser Fun
 parseProc = do
-             p <- withBlock FFun parsePHeader parseProcess
+             -- How to ensure that only one proces pr PROC header?
+             -- p <- withBlock FFun parsePHeader (try parseDecl <|> parseProcess)
+             head <- parsePHeader
+             body <- indented >> parseProcess
+             checkIndent >> symbol ":" -- how to use same??
+             -- should ensure that the colon is at the same indent
              -- spaces/lexeme?
-             return p -- the procedure header and body should be wrapped accordingly
+             return $ FFun head body -- the procedure header and body should be wrapped accordingly
 
 -- Def is PROCedure or FUNCtion (in simplified version)
 parseDef :: IParser Fun
-parseDef = undefined
+parseDef = parseProc -- here we could extend with fx parsing of functions
 
 parseDefs :: IParser Program
 parseDefs = do 
@@ -384,7 +409,7 @@ parseProg = do
              parseDefs
 
 parseString :: Either ParseError Fun
-parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text9
+parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text1
 -- runIndentParser returns Either ParseError a
 
 -- readFile :: String -> Either ParseError String
@@ -399,13 +424,15 @@ parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_tex
 input_text1 :: String
 input_text1 = unlines ["PROC test (INT a)",
                        "  INT b:",
-                       "  a,b := 1,2"
+                       "  a,b := 1,2",
+                       ":"
                       ]
 
 input_text2 :: String
 input_text2 = unlines ["PROC test2 (INT a, b, c)",
                        "  INT x, y, z:",
-                       "  a,b := 1,2"
+                       "  a,b := 1,2",
+                       ":"
                       ]
 
 input_text3 :: String
@@ -413,7 +440,8 @@ input_text3 = unlines ["PROC test3 (INT a, b, c)",
                        "  INT x, y, z:",
                        "  SEQ",
                        "    a := 1",
-                       "    b := 2"
+                       "    b := 2",
+                       ":"
                       ]
 
 input_text4 :: String
@@ -422,7 +450,8 @@ input_text4 = unlines ["PROC test4 (INT a, b, c)",
                        "  IF",
                        "    a <= b",
                        "      SEQ",
-                       "        a := 1"
+                       "        a := 1",
+                       ":"
                       ]
 
 input_text5 :: String
@@ -433,7 +462,8 @@ input_text5 = unlines ["PROC test5 (INT a,b)",
                        "        a := a + 1",
                        "        b := b - 1",
                        "    ELSE",
-                       "      a := a - 1"
+                       "      a := a - 1",
+                       ":"
                       ]
 
 input_text6 :: String
@@ -442,14 +472,16 @@ input_text6 = unlines ["PROC test6 (INT a,b)",
                        "    SEQ",
                        "      a := a + 1",
                        "  BOOL test:",
-                       "  test := TRUE"
+                       "  test := TRUE",
+                       ":"
                       ]
 
 input_text7 :: String
 input_text7 = unlines ["PROC test7 (CHAN OF INT a)",
                        "  INT tmp:",
                        "  a ! (BYTE a)",
-                       "  a ? tmp"
+                       "  a ? tmp",
+                       ":"
                       ]
 
 input_text8 :: String
@@ -458,7 +490,8 @@ input_text8 = unlines ["PROC test8 (CHAN OF INT a)",
                        "    a ! (BYTE a)",
                        "    a ? tmp",
                        "    square(a)",
-                       "    print (\"hej\")"
+                       "    print (\"hej\")",
+                       ":"
                       ]
 
 input_text9 :: String
@@ -468,6 +501,7 @@ input_text9 = unlines ["PROC test9 (CHAN OF INT c1, c2, out)",
                        "    c1 ? a",
                        "      out ! a",
                        "    c2 ? b",
-                       "      out ! b"
+                       "      out ! b",
+                       ":"
                       ]
 
