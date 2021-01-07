@@ -13,6 +13,11 @@ import Data.Char(isDigit, isAlpha, isAlphaNum, isAscii, isPrint)
 type IParser a = IndentParser String () a
 
 -- Helper functions --
+
+-- Skip white space (but not line breaks etc)
+onlySpace :: IParser ()
+onlySpace = skipMany (satisfy (\x -> x == ' '))
+
 --- Skips whitespace and comments
 lexeme :: IParser a -> IParser a
 lexeme p = do a <- p; spaces; return a
@@ -39,19 +44,9 @@ pName = lexeme $ do
                   c <- letter
                   cs <- many (alphaNum <|> char '.')
                   notFollowedBy (alphaNum <|> char '.')
+                  onlySpace
                   if c:cs `notElem` reserved then return $ c:cs
                   else fail "Name must not be reserved word"
-
---         c <- letter
---         cs <- many (satisfy (\x -> isAlphaNum x || (x == '.')))
---         notFollowedBy (alphaNum <|> char '.')
---         n <- lookAhead
--- Here, exploit that Haskell is lazy
---         if c:cs `notElem` reserved && n == mempty then return $ c:cs
---         else
---           if c:cs `elem` reserved || (isAlphaNum (head n) || head n == '.') 
---             then fail
---           else return $ c:cs
 
 --- Digits (and hex.digits)
 pDigit :: IParser Int
@@ -95,21 +90,20 @@ parseDType =
   try (do string "BOOL"; notFollowedBy (alphaNum <|> char '.'); return $ BOOL) <|>
   try (do string "BYTE"; notFollowedBy (alphaNum <|> char '.'); return $ BYTE) <|>
   try (do string "INT"; notFollowedBy (alphaNum <|> char '.'); return $ INT) <|>
-  try (do string "INT16"; notFollowedBy (alphaNum <|> char '.'); return $ INT16) <|>
-  try (do string "INT32"; notFollowedBy (alphaNum <|> char '.'); return $ INT32) <|>
-  try (do string "INT64"; notFollowedBy (alphaNum <|> char '.'); return $ INT64) <|>
-  try (do string "REAL32"; notFollowedBy (alphaNum <|> char '.'); return $ REAL32) <|>
-  try (do string "REAL64"; notFollowedBy (alphaNum <|> char '.'); return $ REAL64) <?>
-  "data type"
+--  try (do string "INT16"; notFollowedBy (alphaNum <|> char '.'); return $ INT16) <|>
+--  try (do string "INT32"; notFollowedBy (alphaNum <|> char '.'); return $ INT32) <|>
+--  try (do string "INT64"; notFollowedBy (alphaNum <|> char '.'); return $ INT64) <|>
+--  try (do string "REAL32"; notFollowedBy (alphaNum <|> char '.'); return $ REAL32) <|>
+--  try (do string "REAL64"; notFollowedBy (alphaNum <|> char '.'); return $ REAL64) <?>
+  try (do symbol "[";
+          e <- parseExp;
+          symbol "]";
+          d <- parseDType;
+          case d of
+            DArray es dt -> return $ DArray (e:es) dt
+            _ -> return $ DArray [e] d )
+    <?> "data type"
 --    (do n <- pName; return $ DVar n)]--, // how to include this rule? should it be left out for simplicity?
---                     (do symbol "[";
---                         e <- parseExp;
---                         symbol "]";
---                         d <- parseDType;
---                         case d of
---                           DArray es dt -> return $ DArray e:es dt
---                           _ -> return $ DArray [e] d )]
-----                         return $ DArray e d)]
 
 parseSpecifier :: IParser Spec
 parseSpecifier = do
@@ -135,11 +129,11 @@ parseChan = do
              return $ Chan c
 
 --- Parse variables (there must be at least one variable in a list of variables)
-parseVariables :: IParser [Exp]
-parseVariables = do
-                  v <- parseVar
-                  try (do symbol ","; vs <- parseVariables; return $ v:vs)
-                    <|> (do return $ [v])
+parseVars :: IParser [Exp]
+parseVars = do
+             v <- parseVar
+             try (do symbol ","; vs <- parseVars; return $ v:vs)
+               <|> (do return $ [v])
 
 --- Parse Expression
 parseExp :: IParser Exp
@@ -156,6 +150,7 @@ parseExp = try (do
                <|>
            try (do
                  o1 <- parseOperand
+                 onlySpace
                  try (do symbol "+"; o2 <- parseOperand; return $ Oper Plus o1 o2)
                    <|> try (do symbol "-"; o2 <- parseOperand; return $ Oper Minus o1 o2)
                    <|> try (do symbol "*"; o2 <- parseOperand; return $ Oper Times o1 o2)
@@ -180,7 +175,7 @@ parseExps = do
 
 --- TODO: use try to ensure all necessary branches are covered
 parseOperand :: IParser Exp
-parseOperand = 
+parseOperand =
   try (do
         symbol "("
         e <- parseExp
@@ -203,8 +198,10 @@ parseOperand =
       <|>
   try (do
         symbol "*#"
-        b <- pHex -- should this control that there are only 2 digits in the hex number?
-        return $ Const $ ByteVal b)
+        b1 <- hexDigit
+        b2 <- hexDigit
+        notFollowedBy hexDigit
+        return $ Const $ ByteVal (b1:[b2]))
       <|>
   try (do
         symbol "TRUE"
@@ -224,56 +221,11 @@ parseOperand =
        d <- pDigit
        return $ Const $ IntVal d
 
---- OBS: arguments kan kun være af 1 data type - fiks dette senere!!
-argVars :: IParser [Exp]
-argVars = try (do
-                symbol ","
-                do
-                 v <- parseVar
-                 vs <- argVars
-                 return $ v:vs
-                <|>
-                do return $ [])
-               <|>
-               (do return $ [])
-
-parseArg :: IParser FArg
-parseArg = do
-            s <- lexeme $ parseSpecifier
-            v <- parseVar
-            vs <- argVars
-            return $ Arg (v:vs) s
-
-parseArgs :: IParser FArgs
-parseArgs = do
-             a <- parseArg
-             as <- parseArgs
-             return $ a:as
-            <|>
-            do return $ []
-
-parsePHeader :: IParser (FName, FArgs, [Spec]) -- the definition of a func requires a [Spec]
-parsePHeader = do
-                symbol "PROC"
-                n <- pName
-                symbol "("
-                args <- parseArgs
-                symbol ")"
-                return $ (n, args, [])
-
--- TODO: fix this according to syntax!!!
-parseDecl :: IParser ([Exp], Spec)
-parseDecl = do
-             s <- lexeme $ parseSpecifier
-             vs <- parseVariables
-             symbol ":"
-             return $ (vs, s)
-
 -- Parsers for different types of processes
 -- OBS: husk at bruge try, så den går ind i alle cases??
 parseAsgn :: IParser  Stmt
 parseAsgn = do
-             vs <- parseVariables
+             vs <- parseVars
              symbol ":="
              es <- parseExps
              return $ SDef vs es
@@ -373,6 +325,22 @@ parseGuard = try (do
                    return $ b) <?>
              "guard"
 
+--parsePHeader :: IParser (FName, FArgs, [Spec]) -- the definition of a func requires a [Spec]
+--parsePHeader = do
+--                symbol "PROC"
+--                n <- pName
+--                symbol "("
+--                args <- parseArgs
+--                symbol ")"
+--                return $ (n, args, [])
+
+-- this is equvalent to a specification containing a declaration. for true syntax, a specification should be able to contain either a declaration, or a definition
+parseDecl :: IParser ([Exp], Spec)
+parseDecl = do
+             s <- lexeme $ parseSpecifier
+             vs <- parseVars
+             symbol ":"
+             return $ (vs, s)
 
 parseProcess :: IParser Stmt
 parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|> 
@@ -382,16 +350,38 @@ parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|>
                try (do symbol "SKIP"; return $ SContinue) <|> 
                try (do symbol "STOP"; return $ SExit) <?> "process"
 
+-- parsing input arguments for procedures etc
+parseFVars :: IParser [Exp]
+parseFVars = do
+              v <- parseVar
+              vs <- try (do symbol ","; parseFVars) <|> (do return $ [])
+              return $ v:vs
+
+parseFormals :: IParser FArgs
+parseFormals = do
+                s <- lexeme $ parseSpecifier
+                a <- parseFVars
+                choice [(do symbol ","; as <- parseFormals; return $ (Arg a s):as),
+                        (do return $ [Arg a s])]
+               <|>
+               do return $ []
+
+-- Parsing procedure
 parseProc :: IParser Fun
 parseProc = do
              -- How to ensure that only one proces pr PROC header?
              -- p <- withBlock FFun parsePHeader (try parseDecl <|> parseProcess)
-             head <- parsePHeader
+             symbol "PROC"
+             fname <- pName
+             symbol "("
+             args <- parseFormals
+             symbol ")"
+             spaces
              body <- indented >> parseProcess
              checkIndent >> symbol ":" -- how to use same??
              -- should ensure that the colon is at the same indent
              -- spaces/lexeme?
-             return $ FFun head body -- the procedure header and body should be wrapped accordingly
+             return $ FFun fname args [] body
 
 -- Def is PROCedure or FUNCtion (in simplified version)
 parseDef :: IParser Fun
@@ -399,9 +389,8 @@ parseDef = parseProc -- here we could extend with fx parsing of functions
 
 parseDefs :: IParser Program
 parseDefs = do 
-             ds <- manyTill parseDef eof
+             ds <- manyTill parseDef eof -- how to ensure that each def has a line break between
              return $ ds -- manyTill should return list (of functions)
-
 
 parseProg :: IParser Program -- [Def] where Def is PROCedure or FUNCtion (in simplified version)
 parseProg = do
@@ -409,7 +398,7 @@ parseProg = do
              parseDefs
 
 parseString :: Either ParseError Fun
-parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text1
+parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text2
 -- runIndentParser returns Either ParseError a
 
 -- readFile :: String -> Either ParseError String
@@ -429,7 +418,7 @@ input_text1 = unlines ["PROC test (INT a)",
                       ]
 
 input_text2 :: String
-input_text2 = unlines ["PROC test2 (INT a, b, c)",
+input_text2 = unlines ["PROC test2 (INT a, b, c, BOOL test)",
                        "  INT x, y, z:",
                        "  a,b := 1,2",
                        ":"

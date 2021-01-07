@@ -5,11 +5,11 @@ module GoAST where
 data Val =
     TrueVal | FalseVal | NoneVal
   | IntVal Int
-  | RealVal Float
+--  | RealVal Float
   | HexVal String
   | ByteVal String
   | StringVal String
-  | ListVal [Val]
+ -- | ListVal [Val]
   deriving (Eq, Show, Read)
 
 data Exp =
@@ -65,7 +65,7 @@ data Spec =
 
 data DType = BOOL | BYTE | INT | INT16 | INT32 | INT64 | REAL32 | REAL64
 --  | DVar VName
---  | DArray [Int] DType
+  | DArray [Exp] DType
   deriving (Eq, Show, Read)
 
 type VName = String
@@ -77,7 +77,7 @@ data Op = Plus | Minus | Times | Div | Mod | Eq | Neq | Less | Greater | Geq | L
 
 type Program = [Fun]
 
-data Fun = FFun (FName, FArgs, [Spec]) Stmt
+data Fun = FFun FName FArgs [Spec] Stmt
   deriving(Eq, Show, Read)
 
 type FArgs = [FArg]
