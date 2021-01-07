@@ -47,13 +47,13 @@ data Stmt = -- here, a statement is almost equivalent to a process in Occam
   | SIf String [Stmt]
   | SSwitch Exp [Stmt] -- a selector, and a number of options
   | SWhile Exp [Stmt] -- a boolean and a process
-  | SCond Exp [Stmt] -- a boolean and a process
+  | SCond [Exp] Stmt -- a boolean and a process
   | SGo String [Stmt]
   | SCall Exp
   | SSelect String [Stmt]
-  | SCase Stmt [Stmt] -- for cases in a select that are not just conditions?
+--  | SCase Exp Stmt -- for cases in a select
   | SSend Exp Exp -- first exp is where to send, second is message
-  | SReceive [Exp] Exp -- first is where to save message (can be NoneVal), second is which channel
+  | SReceive Exp Exp -- first is where to save message (can be NoneVal), second is which channel
   | SContinue
   | SExit
   deriving (Eq, Show, Read)
@@ -84,4 +84,3 @@ type FArgs = [FArg]
 
 data FArg = Arg [Exp] Spec
   deriving (Eq, Show, Read)
-

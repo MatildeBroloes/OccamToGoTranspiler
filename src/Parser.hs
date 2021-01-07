@@ -4,9 +4,9 @@ module Parser where
 import GoAST
 import Text.Parsec hiding (State) -- exports ParseError type (?)
 import Text.Parsec.Indent
-import Control.Monad.State
+--import Control.Monad.State
 
-import Data.Char(isDigit, isAlpha, isAlphaNum, isAscii, isPrint)
+import Data.Char(isAscii, isPrint)
 
 -- type IndentParser s u a = IndentParser s u (IndentT m) a
 -- runIndentParser is equivalent to runParser, but for indentation sensitive parser
@@ -213,9 +213,18 @@ parseOperand =
       <|>
   try (do
         name <- pName
-        try (do symbol "("; args <- try parseExps <|> 
-                                    (do return []); symbol ")"; return $ Call name args)
-          <|> (do return $ Var name))
+        do symbol "("
+        args <- try parseExps <|> (do return [])
+        symbol ")"
+        return $ Call name args)
+      <|> 
+  try parseVar 
+      <|>
+  try (do
+        symbol "\'"
+        c <- pChar
+        symbol "\'"
+        return $ Const (ByteVal [c]))
       <|>
       do
        d <- pDigit
@@ -234,14 +243,14 @@ parseIn :: IParser Stmt
 parseIn = do
            c <- parseChan
            symbol "?"
-           vs <- parseInputItems
-           return $ SReceive vs c
+           v <- parseVar
+           return $ SReceive v c
 
-parseInputItems :: IParser [Exp]
-parseInputItems = do
-                   v <- parseVar
-                   choice [(do symbol ";"; vs <- parseInputItems; return $ v:vs),
-                           (do return $ [v])]
+--parseInputItems :: IParser [Exp]
+--parseInputItems = do
+--                   v <- parseVar
+--                   choice [(do symbol ";"; vs <- parseInputItems; return $ v:vs),
+--                           (do return $ [v])]
 
 parseOut :: IParser Stmt
 parseOut = do
@@ -250,11 +259,11 @@ parseOut = do
             msg <- parseExp
             return $ SSend c msg
 
-parseOutputItems :: IParser [Exp]
-parseOutputItems = do
-                    e <- parseExp
-                    choice [(do symbol ";"; es <- parseOutputItems; return $ e:es),
-                            (do return $ [e])]
+--parseOutputItems :: IParser [Exp]
+--parseOutputItems = do
+--                    e <- parseExp
+--                    choice [(do symbol ";"; es <- parseOutputItems; return $ e:es),
+--                            (do return $ [e])]
 
 parseSeq :: IParser Stmt
 parseSeq = withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
@@ -266,8 +275,9 @@ parseIf = do
 
 parseCond :: IParser Stmt
 parseCond = do
-             c <- withBlock SCond parseExp parseProcess
-             return $ c
+             es <- parseExps
+             p <- indented >> parseProcess
+             return $ SCond es p
 
 parseCase :: IParser Stmt
 parseCase = do
@@ -276,9 +286,9 @@ parseCase = do
 
 parseOpt :: IParser Stmt
 parseOpt = try (do
-                 o <- withBlock SCond (do symbol "ELSE"; return $ Const TrueVal) parseProcess
-                 -- it is probably not necessary to unpack the result of withBlock 
-                 return $ o)
+                 symbol "ELSE"
+                 p <- indented >> parseProcess
+                 return $ SCond [] p)
                 <|>
                 try parseCond
 
@@ -296,11 +306,6 @@ parseCall :: IParser Stmt
 parseCall = do
              c <- parseOperand
              return $ SCall c
---             fname <- pName
---             symbol "("
---             args <- try parseExps <|> (do return [])
---             symbol ")"
---             return $ SCall fname args
 
 parseAlt :: IParser Stmt
 parseAlt = do
@@ -308,22 +313,48 @@ parseAlt = do
             return $ s
 
 parseAlternative :: IParser Stmt
-parseAlternative = try (withBlock SCase parseIn parseProcess) <|>
-                   try (withBlock SCond parseGuard parseProcess) <?>
-                   "alternative"
+parseAlternative = try parseAlt <|> (do
+                                      g <- parseGuard
+                                      p <- indented >> parseProcess
+                                      return $ SCond g p)
+                                <?> "alternative"
+--parseAlternative = try (do
+--                         i <- parseIn
+--                         p <- indented >> parseProcess
+--                         return $ SCase i p)
+--                     <|>
+--                   try (do
+--                         g <- parseGuard
+--                         p <- indented >> parseProcess
+--                         return $ SCond g p)
+--                     <?> "alternative"
 
-parseGuard :: IParser Exp
+parseGuard :: IParser [Exp]
 parseGuard = try (do
+                   i <- parseIn
+                   return $ [Guard (Const TrueVal) i]) <|>
+             try (do
                    b <- parseExp
                    symbol "&"
                    i <- parseIn
-                   return $ Guard b i) <|>
+                   return $ [Guard b i]) <|>
              try (do
-                   b <- parseExp -- should there be a seperate parser for boolean expressions?
+                   b <- parseExp
                    symbol "&"
                    symbol "SKIP"
-                   return $ b) <?>
+                   return $ [Guard b SContinue]) <?>
              "guard"
+--parseGuard = try (do
+--                   b <- parseExp
+--                   symbol "&"
+--                   i <- parseIn
+--                   return $ [Guard b i]) <|>
+--             try (do
+--                   b <- parseExp
+--                   symbol "&"
+--                   symbol "SKIP"
+--                   return $ [b]) <?>
+--             "guard"
 
 --parsePHeader :: IParser (FName, FArgs, [Spec]) -- the definition of a func requires a [Spec]
 --parsePHeader = do
