@@ -19,7 +19,7 @@ testCaseBad s t =
   testCase ("*" ++ s) $
     case t of
       Right a -> assertFailure $ "Unexpected success:" ++ show a
-      Left e -> return ()
+      Left _ -> return ()
 
 --------------------
 -- Testing Parser --
@@ -239,6 +239,9 @@ parserTests =
     testCase "Operands: can be FALSE"
      $ runIndentParser parseOperand () "" "FALSE"
      @?= Right (Const FalseVal),
+    testCase "Operands: can be bytes"
+     $ runIndentParser parseOperand () "" "\'c\'"
+     @?= Right (Const (ByteVal "c")),
     testCase "Operands: can be lists of expressions"
      $ runIndentParser parseOperand () "" "[a, 5+5, NOT hej]"
      @?= Right (List [Var "a", 
@@ -246,8 +249,75 @@ parserTests =
                       Not (Var "hej")]), 
     testCase "Operands: can be expressions enclosed in parentheses"
      $ runIndentParser parseOperand () "" "(5+5)"
-     @?= Right (Oper Plus (Const (IntVal 5)) (Const (IntVal 5)))
+     @?= Right (Oper Plus (Const (IntVal 5)) (Const (IntVal 5))),
 -- Parse Process
+---- Assignment
+    testCase "Process: assignment of one variable"
+     $ runIndentParser parseProcess () "" "a := 1"
+     @?= Right (SDef [(Var "a")] [Const (IntVal 1)]),
+    testCase "Process: assignment of multiple variables"
+     $ runIndentParser parseProcess () "" "a, b ,c := 1, 2 ,3"
+     @?= Right (SDef [Var "a", Var "b", Var "c"]
+                     [Const (IntVal 1), Const (IntVal 2), Const (IntVal 3)]),
+---- Input
+    testCase "Process: reading input from channel"
+     $ runIndentParser parseProcess () "" "c ? a"
+     @?= Right (SReceive (Var "a") (Chan "c")),
+---- Output
+    testCase "Process: writing output to channel"
+     $ runIndentParser parseProcess () "" "c ! a"
+     @?= Right (SSend (Chan "c") (Var "a")),
+---- SKIP
+    testCase "Process: parsing SKIP"
+     $ runIndentParser parseProcess () "" "SKIP"
+     @?= Right SContinue,
+---- STOP
+    testCase "Process: parsing STOP"
+     $ runIndentParser parseProcess () "" "STOP"
+     @?= Right SExit,
+---- Sequence
+    testCase "Process: a SEQ, followed by an indented block"
+     $ runIndentParser parseProcess () "" "SEQ \n  SKIP"
+     @?= Right (SSeq "seq" [SContinue]),
+    testCase "Process: SEQ only parses correctly indented blocks"
+     $ runIndentParser parseProcess () "" "SEQ \n  SKIP\nSTOP"
+     @?= Right (SSeq "seq" [SContinue]),
+    testCase "Process: sequences can be nested"
+     $ runIndentParser parseProcess () "" "SEQ \n  SEQ \n    SKIP\n  SEQ\n    STOP"
+     @?= Right (SSeq "seq" [SSeq "seq" [SContinue], SSeq "seq" [SExit]]),
+---- Conditional
+    testCase "Process: IF, followed by indented block of Cond"
+     $ runIndentParser parseProcess () "" "IF \n  a = 5\n    SKIP"
+     @?= Right (SIf "if" [SCond [Oper Eq (Var "a") (Const (IntVal 5))] SContinue]),
+    testCase "Process: IF with multiple Conds"
+     $ runIndentParser parseProcess () "" "IF \n  a >= 5\n    SKIP\n  a < 5\n    a := a + 1"
+     @?= Right (SIf "if" [SCond [Oper Geq (Var "a") (Const (IntVal 5))] SContinue,
+                          SCond [Oper Less (Var "a") (Const (IntVal 5))] 
+                                (SDef [Var "a"] [Oper Plus (Var "a") (Const (IntVal 1))])]),
+    testCase "Process: IF with TRUE as a condition"
+     $ runIndentParser parseProcess () "" "IF \n  a >= 5\n    SKIP\n  TRUE\n    a := a + 1"
+     @?= Right (SIf "if" [SCond [Oper Geq (Var "a") (Const (IntVal 5))] SContinue,
+                          SCond [Const TrueVal] 
+                                (SDef [Var "a"] [Oper Plus (Var "a") (Const (IntVal 1))])]),
+---- Selection
+    testCase "Process: CASE, followed by exp and indented block of Options"
+     $ runIndentParser parseProcess () "" "CASE dir\n  up\n    x := x + 1\n  down\n    x := x - 1"
+     @?= Right (SSwitch (Var "dir") 
+                        [SCond [Var "up"] 
+                               (SDef [Var "x"] [Oper Plus (Var "x") (Const (IntVal 1))]),
+                         SCond [Var "down"] 
+                               (SDef [Var "x"] [Oper Minus (Var "x") (Const (IntVal 1))])]),
+    testCase "Process: CASE with multiple matching expressions"
+     $ runIndentParser parseProcess () "" 
+                       "CASE l\n  'a','b','c'\n    x := TRUE\n  ELSE\n    x := FALSE"
+     @?= Right (SSwitch (Var "l") 
+                        [SCond [Const (ByteVal "a"), Const (ByteVal "b"), Const (ByteVal "c")] 
+                               (SDef [Var "x"] [Const TrueVal]),
+                         SCond [] (SDef [Var "x"] [Const FalseVal])])
+---- Loop
+---- Parallel
+---- Alternation
+---- Specification with declaration
 --    Processes can be assignment, input/output, skip, stop, sequence, conditional (if),
 --    selection (case), loop (while), parallel, alternation, declaration (and definition??)
   ]   
