@@ -112,7 +112,7 @@ parseVar = do
             v <- pName
             return $ Var v
 
---- Parse channe
+--- Parse channel
 parseChan :: IParser Exp
 parseChan = do
              c <- pName
@@ -219,6 +219,18 @@ parseOperand =
        d <- pDigit
        return $ Const $ IntVal d
 
+-- Replicator
+parseReplicator :: IParser (Exp, Exp, Exp)
+parseReplicator = do
+                   index <- parseVar
+                   string "="
+                   onlySpace
+                   base <- parseExp
+                   string "FOR"
+                   onlySpace
+                   count <- parseExp
+                   return $ (index, base, count)
+
 -- Parsers for different types of processes
 parseAsgn :: IParser  Stmt
 parseAsgn = do
@@ -242,10 +254,21 @@ parseOut = do
             return $ SSend c msg
 
 parseSeq :: IParser Stmt
-parseSeq = withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
+parseSeq = try (do
+                 symbol "SEQ"
+                 (index, base, count) <- parseReplicator
+                 p <- indented >> parseProcess
+                 return $ SFor index base count $ SSeq "seq" [p])
+             <|> withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
 
 parseIf :: IParser Stmt
-parseIf = withBlock SIf (do symbol "IF"; return "if") parseCond
+parseIf = try (do
+                symbol "IF"
+                (index, base, count) <- parseReplicator
+                p <- indented >> parseCond
+                return $ SFor index base count $ SIf "if" [p])
+            <|> withBlock SIf (do symbol "IF"; return "if") parseCond
+
 
 parseCond :: IParser Stmt
 parseCond = do
@@ -272,7 +295,12 @@ parseWhile = do
               return $ SWhile e p
 
 parsePar :: IParser Stmt
-parsePar = withBlock SGo (do symbol "PAR"; return "par") (try parseProcess <|> parseCall)
+parsePar = try (do
+                 symbol "PAR"
+                 (index, base, count) <- parseReplicator
+                 p <- indented >> (try parseProcess <|> parseCall)
+                 return $ SFor index base count $ SGo "par" [p])
+             <|> withBlock SGo (do symbol "PAR"; return "par") (try parseProcess <|> parseCall)
 
 parseCall :: IParser Stmt
 parseCall = do
@@ -366,97 +394,3 @@ parseProg = do
 
 parseString :: String -> Either ParseError Program
 parseString s = runIndentParser (do a <- parseProg; eof; return a) () "" s
-
--- readFile :: String -> Either ParseError String
--- readFile fileName = do
---                      file <- openFile fileName ReadMode
---                      contents <- hGetContents file
---                      case iParse parseProg "test" contents of
---                        Left err -> putStr err
---                        Right a -> putStr a
---                      hClose file
-
-input_text1 :: String
-input_text1 = unlines ["PROC test (INT a)",
-                       "  INT b:",
-                       "  a,b := 1,2",
-                       ":"
-                      ]
-
-input_text2 :: String
-input_text2 = unlines ["PROC test2 (INT a, b, c, BOOL test)",
-                       "  INT x, y, z:",
-                       "  a,b := 1,2",
-                       ":"
-                      ]
-
-input_text3 :: String
-input_text3 = unlines ["PROC test3 (INT a, b, c)",
-                       "  INT x, y, z:",
-                       "  SEQ",
-                       "    a := 1",
-                       "    b := 2",
-                       ":"
-                      ]
-
-input_text4 :: String
-input_text4 = unlines ["PROC test4 (INT a, b, c)",
-                       "  INT x, y, z:",
-                       "  IF",
-                       "    a <= b",
-                       "      SEQ",
-                       "        a := 1",
-                       ":"
-                      ]
-
-input_text5 :: String
-input_text5 = unlines ["PROC test5 (INT a,b)",
-                       "  CASE a",
-                       "    a <= b",
-                       "      SEQ",
-                       "        a := a + 1",
-                       "        b := b - 1",
-                       "    ELSE",
-                       "      a := a - 1",
-                       ":"
-                      ]
-
-input_text6 :: String
-input_text6 = unlines ["PROC test6 (INT a,b)",
-                       "  WHILE a < b",
-                       "    SEQ",
-                       "      a := a + 1",
-                       "  BOOL test:",
-                       "  test := TRUE",
-                       ":"
-                      ]
-
-input_text7 :: String
-input_text7 = unlines ["PROC test7 (CHAN OF INT a)",
-                       "  INT tmp:",
-                       "  a ! (BYTE a)",
-                       "  a ? tmp",
-                       ":"
-                      ]
-
-input_text8 :: String
-input_text8 = unlines ["PROC test8 (CHAN OF INT a)",
-                       "  PAR",
-                       "    a ! (BYTE a)",
-                       "    a ? tmp",
-                       "    square(a)",
-                       "    print (\"hej\")",
-                       ":"
-                      ]
-
-input_text9 :: String
-input_text9 = unlines ["PROC test9 (CHAN OF INT c1, c2, out)",
-                       "  INT a,b:",
-                       "  ALT",
-                       "    c1 ? a",
-                       "      out ! a",
-                       "    c2 ? b",
-                       "      out ! b",
-                       ":"
-                      ]
-

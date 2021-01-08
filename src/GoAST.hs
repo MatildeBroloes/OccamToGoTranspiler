@@ -36,6 +36,7 @@ data Stmt = -- here, a statement is almost equivalent to a process in Occam
   | SCall Exp
   | SSelect String [Stmt]
 --  | SCase Exp Stmt -- for cases in a select
+  | SFor Exp Exp Exp Stmt -- for replicated processes. index name(variable), base, count, process
   | SSend Exp Exp -- first exp is where to send, second is message
   | SReceive Exp Exp -- first is where to save message (can be NoneVal), second is which channel
   | SContinue
