@@ -8,8 +8,6 @@ import Text.Parsec.Indent
 
 import Data.Char(isAscii, isPrint)
 
--- type IndentParser s u a = IndentParser s u (IndentT m) a
--- runIndentParser is equivalent to runParser, but for indentation sensitive parser
 type IParser a = IndentParser String () a
 
 -- Helper functions --
@@ -44,7 +42,6 @@ pName = lexeme $ do
                   c <- letter
                   cs <- many (alphaNum <|> char '.')
                   notFollowedBy (alphaNum <|> char '.')
-                  onlySpace
                   if c:cs `notElem` reserved then return $ c:cs
                   else fail "Name must not be reserved word"
 
@@ -74,7 +71,6 @@ pChar = do
         do
          c <- satisfy (\x -> isAscii x && isPrint x && not (x == '\'' || x == '\"'))
          return c
---        <?> "Could not parse char"
 
 --- String
 pString :: IParser String
@@ -90,11 +86,6 @@ parseDType =
   try (do string "BOOL"; notFollowedBy (alphaNum <|> char '.'); return $ BOOL) <|>
   try (do string "BYTE"; notFollowedBy (alphaNum <|> char '.'); return $ BYTE) <|>
   try (do string "INT"; notFollowedBy (alphaNum <|> char '.'); return $ INT) <|>
---  try (do string "INT16"; notFollowedBy (alphaNum <|> char '.'); return $ INT16) <|>
---  try (do string "INT32"; notFollowedBy (alphaNum <|> char '.'); return $ INT32) <|>
---  try (do string "INT64"; notFollowedBy (alphaNum <|> char '.'); return $ INT64) <|>
---  try (do string "REAL32"; notFollowedBy (alphaNum <|> char '.'); return $ REAL32) <|>
---  try (do string "REAL64"; notFollowedBy (alphaNum <|> char '.'); return $ REAL64) <?>
   try (do symbol "[";
           e <- parseExp;
           symbol "]";
@@ -103,7 +94,6 @@ parseDType =
             DArray es dt -> return $ DArray (e:es) dt
             _ -> return $ DArray [e] d )
     <?> "data type"
---    (do n <- pName; return $ DVar n)]--, // how to include this rule? should it be left out for simplicity?
 
 parseSpecifier :: IParser Spec
 parseSpecifier = do
@@ -173,7 +163,6 @@ parseExps = do
              choice [(do symbol ","; es <- parseExps; return $ e:es),
                      (do return $ [e])]
 
---- TODO: use try to ensure all necessary branches are covered
 parseOperand :: IParser Exp
 parseOperand =
   try (do
@@ -231,7 +220,6 @@ parseOperand =
        return $ Const $ IntVal d
 
 -- Parsers for different types of processes
--- OBS: husk at bruge try, så den går ind i alle cases??
 parseAsgn :: IParser  Stmt
 parseAsgn = do
              vs <- parseVars
@@ -246,12 +234,6 @@ parseIn = do
            v <- parseVar
            return $ SReceive v c
 
---parseInputItems :: IParser [Exp]
---parseInputItems = do
---                   v <- parseVar
---                   choice [(do symbol ";"; vs <- parseInputItems; return $ v:vs),
---                           (do return $ [v])]
-
 parseOut :: IParser Stmt
 parseOut = do
             c <- parseChan
@@ -259,19 +241,11 @@ parseOut = do
             msg <- parseExp
             return $ SSend c msg
 
---parseOutputItems :: IParser [Exp]
---parseOutputItems = do
---                    e <- parseExp
---                    choice [(do symbol ";"; es <- parseOutputItems; return $ e:es),
---                            (do return $ [e])]
-
 parseSeq :: IParser Stmt
 parseSeq = withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
 
 parseIf :: IParser Stmt
-parseIf = do 
-           s <- withBlock SIf (do symbol "IF"; return "if") parseCond
-           return $ s
+parseIf = withBlock SIf (do symbol "IF"; return "if") parseCond
 
 parseCond :: IParser Stmt
 parseCond = do
@@ -280,9 +254,7 @@ parseCond = do
              return $ SCond es p
 
 parseCase :: IParser Stmt
-parseCase = do
-             s <- withBlock SSwitch (do symbol "CASE"; parseExp) parseOpt
-             return $ s
+parseCase = withBlock SSwitch (do symbol "CASE"; parseExp) parseOpt
 
 parseOpt :: IParser Stmt
 parseOpt = try (do
@@ -294,13 +266,13 @@ parseOpt = try (do
 
 parseWhile :: IParser Stmt
 parseWhile = do
-              s <- withBlock SWhile (do symbol "WHILE"; parseExp) parseProcess
-              return $ s
+              symbol "WHILE"
+              e <- parseExp
+              p <- indented >> parseProcess
+              return $ SWhile e p
 
 parsePar :: IParser Stmt
-parsePar = do
-            s <- withBlock SGo (do symbol "PAR"; return "par") (try parseProcess <|> parseCall)
-            return $ s
+parsePar = withBlock SGo (do symbol "PAR"; return "par") (try parseProcess <|> parseCall)
 
 parseCall :: IParser Stmt
 parseCall = do
@@ -308,9 +280,7 @@ parseCall = do
              return $ SCall c
 
 parseAlt :: IParser Stmt
-parseAlt = do
-            s <- withBlock SSelect (do symbol "ALT"; return "alt") parseAlternative
-            return $ s
+parseAlt = withBlock SSelect (do symbol "ALT"; return "alt") parseAlternative
 
 parseAlternative :: IParser Stmt
 parseAlternative = try parseAlt <|> (do
@@ -318,16 +288,6 @@ parseAlternative = try parseAlt <|> (do
                                       p <- indented >> parseProcess
                                       return $ SCond g p)
                                 <?> "alternative"
---parseAlternative = try (do
---                         i <- parseIn
---                         p <- indented >> parseProcess
---                         return $ SCase i p)
---                     <|>
---                   try (do
---                         g <- parseGuard
---                         p <- indented >> parseProcess
---                         return $ SCond g p)
---                     <?> "alternative"
 
 parseGuard :: IParser [Exp]
 parseGuard = try (do
@@ -344,31 +304,12 @@ parseGuard = try (do
                    symbol "SKIP"
                    return $ [Guard b SContinue]) <?>
              "guard"
---parseGuard = try (do
---                   b <- parseExp
---                   symbol "&"
---                   i <- parseIn
---                   return $ [Guard b i]) <|>
---             try (do
---                   b <- parseExp
---                   symbol "&"
---                   symbol "SKIP"
---                   return $ [b]) <?>
---             "guard"
-
---parsePHeader :: IParser (FName, FArgs, [Spec]) -- the definition of a func requires a [Spec]
---parsePHeader = do
---                symbol "PROC"
---                n <- pName
---                symbol "("
---                args <- parseArgs
---                symbol ")"
---                return $ (n, args, [])
 
 -- this is equvalent to a specification containing a declaration. for true syntax, a specification should be able to contain either a declaration, or a definition
 parseDecl :: IParser ([Exp], Spec)
 parseDecl = do
-             s <- lexeme $ parseSpecifier
+             s <- parseSpecifier
+             onlySpace
              vs <- parseVars
              symbol ":"
              return $ (vs, s)
@@ -390,7 +331,8 @@ parseFVars = do
 
 parseFormals :: IParser FArgs
 parseFormals = do
-                s <- lexeme $ parseSpecifier
+                s <- parseSpecifier
+                onlySpace
                 a <- parseFVars
                 choice [(do symbol ","; as <- parseFormals; return $ (Arg a s):as),
                         (do return $ [Arg a s])]
@@ -400,21 +342,15 @@ parseFormals = do
 -- Parsing procedure
 parseProc :: IParser Fun
 parseProc = do
-             -- How to ensure that only one proces pr PROC header?
-             -- p <- withBlock FFun parsePHeader (try parseDecl <|> parseProcess)
              symbol "PROC"
              fname <- pName
              symbol "("
              args <- parseFormals
              symbol ")"
-             spaces
              body <- indented >> parseProcess
              checkIndent >> symbol ":" -- how to use same??
-             -- should ensure that the colon is at the same indent
-             -- spaces/lexeme?
              return $ FFun fname args [] body
 
--- Def is PROCedure or FUNCtion (in simplified version)
 parseDef :: IParser Fun
 parseDef = parseProc -- here we could extend with fx parsing of functions
 
@@ -423,14 +359,13 @@ parseDefs = do
              ds <- manyTill parseDef eof -- how to ensure that each def has a line break between
              return $ ds -- manyTill should return list (of functions)
 
-parseProg :: IParser Program -- [Def] where Def is PROCedure or FUNCtion (in simplified version)
+parseProg :: IParser Program
 parseProg = do
              lexeme $ return () -- looking for white space or comments in the beginning of program
              parseDefs
 
-parseString :: Either ParseError Fun
-parseString = runIndentParser (do a <- parseProc; eof; return a) () "" input_text2
--- runIndentParser returns Either ParseError a
+parseString :: String -> Either ParseError Program
+parseString s = runIndentParser (do a <- parseProg; eof; return a) () "" s
 
 -- readFile :: String -> Either ParseError String
 -- readFile fileName = do
