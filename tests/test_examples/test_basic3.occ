@@ -1,0 +1,6 @@
+PROC test3 (INT a, b, c)
+  INT x, y, z:
+  SEQ
+    a := 1
+    b := 2
+:

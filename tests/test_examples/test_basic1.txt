@@ -1,0 +1,1 @@
+[FFun "test" [Arg [Var "a"] (SVar INT)] [] (SDecl [Var "b"] (SVar INT) (SDef [Var "a",Var "b"] [Const (IntVal 1),Const (IntVal 2)]))]
