@@ -174,7 +174,7 @@ parseOperand =
   try (do
         symbol "["
         es <- (do symbol "]"; return $ []) <|> (do a <- parseExps; symbol "]"; return a)
-        return $ List es)
+        return $ Array es)
       <|>
   try (do
         symbol "#"
@@ -265,27 +265,36 @@ parseIf :: IParser Stmt
 parseIf = try (do
                 symbol "IF"
                 (index, base, count) <- parseReplicator
-                p <- indented >> parseCond
+                p <- indented >> parseBool
                 return $ SFor index base count $ SIf "if" [p])
-            <|> withBlock SIf (do symbol "IF"; return "if") parseCond
+            <|> withBlock SIf (do symbol "IF"; return "if") parseBool
 
 
-parseCond :: IParser Stmt
-parseCond = do
-             es <- parseExps
+--parseCond :: IParser Stmt
+--parseCond = do
+--             es <- parseExps
+--             p <- indented >> parseProcess
+--             return $ SCond es p
+parseBool :: IParser Cond
+parseBool = do
+             e <- parseExp
              p <- indented >> parseProcess
-             return $ SCond es p
+             return $ IfCase e p
+             
 
 parseCase :: IParser Stmt
 parseCase = withBlock SSwitch (do symbol "CASE"; parseExp) parseOpt
 
-parseOpt :: IParser Stmt
+parseOpt :: IParser Cond
 parseOpt = try (do
                  symbol "ELSE"
                  p <- indented >> parseProcess
-                 return $ SCond [] p)
+                 return $ SwitchCase [Const TrueVal] p)
                 <|>
-                try parseCond
+                do
+                 es <- parseExps
+                 p <- indented >> parseProcess
+                 return $ SwitchCase es p
 
 parseWhile :: IParser Stmt
 parseWhile = do
@@ -307,30 +316,36 @@ parseCall = do
              c <- parseOperand
              return $ SCall c
 
+-- TODO: alternation with no alternatives behaves like a STOP
+-- TODO: alternations can also be replicated
 parseAlt :: IParser Stmt
-parseAlt = withBlock SSelect (do symbol "ALT"; return "alt") parseAlternative
+parseAlt = do
+            p <- withBlock SSelect (do symbol "ALT"; return "alt") parseAlternative
+            case p of
+              SSelect "alt" [] -> return $ SExit
+              _ -> return $ p
 
 parseAlternative :: IParser Stmt
 parseAlternative = try parseAlt <|> (do
                                       g <- parseGuard
                                       p <- indented >> parseProcess
-                                      return $ SCond g p)
+                                      return $ SCase $ SelectCase g p)
                                 <?> "alternative"
 
-parseGuard :: IParser [Exp]
+parseGuard :: IParser (Exp, Stmt)
 parseGuard = try (do
                    i <- parseIn
-                   return $ [Guard (Const TrueVal) i]) <|>
+                   return $ (Const TrueVal, i)) <|>
              try (do
                    b <- parseExp
                    symbol "&"
                    i <- parseIn
-                   return $ [Guard b i]) <|>
+                   return $ (b, i)) <|>
              try (do
                    b <- parseExp
                    symbol "&"
                    symbol "SKIP"
-                   return $ [Guard b SContinue]) <?>
+                   return $ (b, SContinue)) <?>
              "guard"
 
 -- this is equvalent to a specification containing a declaration. for true syntax, a specification should be able to contain either a declaration, or a definition

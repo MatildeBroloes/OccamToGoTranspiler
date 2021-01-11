@@ -17,10 +17,9 @@ data Exp =
   | Var VName
   | Chan VName
   | Oper Op Exp Exp
-  | Guard Exp Stmt
   | Call FName [Exp]
   | Not Exp
-  | List [Exp]
+  | Array [Exp]
   | Conv DType Exp -- conversion, fx BYTE x for converting x to byte
   deriving (Eq, Show, Read)
 
@@ -28,19 +27,24 @@ data Stmt = -- here, a statement is almost equivalent to a process in Occam
     SDef [Exp] [Exp]
   | SDecl [Exp] Spec Stmt
   | SSeq String [Stmt] -- evt lav disse til 1 type, hvor String siger hvilken slags
-  | SIf String [Stmt]
-  | SSwitch Exp [Stmt] -- a selector, and a number of options
-  | SWhile Exp Stmt -- a boolean and a process
-  | SCond [Exp] Stmt -- a boolean and a process
+  | SIf String [Cond]
+  | SSwitch Exp [Cond] -- a selector, and a number of options
   | SGo String [Stmt]
-  | SCall Exp
   | SSelect String [Stmt]
---  | SCase Exp Stmt -- for cases in a select
+  | SWhile Exp Stmt -- a boolean and a process
   | SFor Exp Exp Exp Stmt -- for replicated processes. index name(variable), base, count, process
+  | SCase Cond -- for cases in a select or switch
+  | SCall Exp
   | SSend Exp Exp -- first exp is where to send, second is message
   | SReceive Exp Exp -- first is where to save message (can be NoneVal), second is which channel
   | SContinue
   | SExit
+  deriving (Eq, Show, Read)
+
+data Cond =
+    IfCase Exp Stmt
+  | SwitchCase [Exp] Stmt
+  | SelectCase (Exp, Stmt) Stmt -- (boolean, input)
   deriving (Eq, Show, Read)
 
 data Spec =
