@@ -245,7 +245,7 @@ parserTests =
      @?= Right (Const (ByteVal "c")),
     testCase "Operands: can be lists of expressions"
      $ runIndentParser parseOperand () "" "[a, 5+5, NOT hej]"
-     @?= Right (List [Var "a", 
+     @?= Right (Array [Var "a", 
                       Oper Plus (Const (IntVal 5)) (Const (IntVal 5)), 
                       Not (Var "hej")]), 
     testCase "Operands: can be expressions enclosed in parentheses"
@@ -288,16 +288,16 @@ parserTests =
 ---- Conditional
     testCase "Process: IF, followed by indented block of Cond"
      $ runIndentParser parseProcess () "" "IF \n  a = 5\n    SKIP"
-     @?= Right (SIf "if" [SCond [Oper Eq (Var "a") (Const (IntVal 5))] SContinue]),
+     @?= Right (SIf "if" [IfCase (Oper Eq (Var "a") (Const (IntVal 5))) SContinue]),
     testCase "Process: IF with multiple Conds"
      $ runIndentParser parseProcess () "" "IF \n  a >= 5\n    SKIP\n  a < 5\n    a := a + 1"
-     @?= Right (SIf "if" [SCond [Oper Geq (Var "a") (Const (IntVal 5))] SContinue,
-                          SCond [Oper Less (Var "a") (Const (IntVal 5))] 
+     @?= Right (SIf "if" [IfCase (Oper Geq (Var "a") (Const (IntVal 5))) SContinue,
+                          IfCase (Oper Less (Var "a") (Const (IntVal 5))) 
                                 (SDef [Var "a"] [Oper Plus (Var "a") (Const (IntVal 1))])]),
     testCase "Process: IF with TRUE as a condition"
      $ runIndentParser parseProcess () "" "IF \n  a >= 5\n    SKIP\n  TRUE\n    a := a + 1"
-     @?= Right (SIf "if" [SCond [Oper Geq (Var "a") (Const (IntVal 5))] SContinue,
-                          SCond [Const TrueVal] 
+     @?= Right (SIf "if" [IfCase (Oper Geq (Var "a") (Const (IntVal 5))) SContinue,
+                          IfCase (Const TrueVal) 
                                 (SDef [Var "a"] [Oper Plus (Var "a") (Const (IntVal 1))])]),
     testCaseBad "Process: IF can only have one process per choice"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
@@ -306,17 +306,17 @@ parserTests =
     testCase "Process: CASE, followed by exp and indented block of Options"
      $ runIndentParser parseProcess () "" "CASE dir\n  up\n    x := x + 1\n  down\n    x := x - 1"
      @?= Right (SSwitch (Var "dir") 
-                        [SCond [Var "up"] 
-                               (SDef [Var "x"] [Oper Plus (Var "x") (Const (IntVal 1))]),
-                         SCond [Var "down"] 
-                               (SDef [Var "x"] [Oper Minus (Var "x") (Const (IntVal 1))])]),
+                        [SwitchCase [Var "up"] 
+                                    (SDef [Var "x"] [Oper Plus (Var "x") (Const (IntVal 1))]),
+                         SwitchCase [Var "down"] 
+                                    (SDef [Var "x"] [Oper Minus (Var "x") (Const (IntVal 1))])]),
     testCase "Process: CASE with multiple matching expressions"
      $ runIndentParser parseProcess () "" 
                        "CASE l\n  'a','b','c'\n    x := TRUE\n  ELSE\n    x := FALSE"
      @?= Right (SSwitch (Var "l") 
-                        [SCond [Const (ByteVal "a"), Const (ByteVal "b"), Const (ByteVal "c")] 
-                               (SDef [Var "x"] [Const TrueVal]),
-                         SCond [] (SDef [Var "x"] [Const FalseVal])]),
+                        [SwitchCase [Const (ByteVal "a"), Const (ByteVal "b"), Const (ByteVal "c")] 
+                                    (SDef [Var "x"] [Const TrueVal]),
+                         SwitchCase [Const TrueVal] (SDef [Var "x"] [Const FalseVal])]),
     testCaseBad "Process: CASE can have only one process per option"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
                         "CASE dir\n  up\n    x := x + 1\n    x := x - 1",
@@ -339,25 +339,24 @@ parserTests =
     testCase "Process: ALT where alternative guard is input"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
                         "ALT\n  c1 ? a\n    c2 ! a + 1"
-     @?= Right (SSelect "alt" [SCond [Guard (Const TrueVal) (SReceive (Var "a") (Chan "c1"))] 
-                                     (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1))))]),
+     @?= Right (SSelect "alt" [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c1")) 
+                                          (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1)))))]),
     testCase "Process: ALT where alternative guard is 'boolean & input'"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
                         "ALT\n  true & c1 ? a\n    c2 ! a + 1"
-     @?= Right (SSelect "alt" [SCond [Guard (Var "true") (SReceive (Var "a") (Chan "c1"))] 
-                                     (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1))))]),
+     @?= Right (SSelect "alt" [SCase (SelectCase (Var "true", SReceive (Var "a") (Chan "c1"))
+                                          (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1)))))]),
     testCase "Process: ALT where alternative guard is 'boolean & SKIP'"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
                         "ALT\n  true & SKIP\n    c2 ! a + 1"
-     @?= Right (SSelect "alt" [SCond [Guard (Var "true") (SContinue)] 
-                                     (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1))))]),
+     @?= Right (SSelect "alt" [SCase (SelectCase (Var "true", SContinue) 
+                                          (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1)))))]),
     testCase "Process: ALT with multiple alternatives"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
                         "ALT\n  true & SKIP\n    c2 ! a + 1\n  c1 ? a\n    SKIP"
-     @?= Right (SSelect "alt" [SCond [Guard (Var "true") (SContinue)] 
-                                     (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1)))),
-                               SCond [Guard (Const TrueVal) (SReceive (Var "a") (Chan "c1"))]
-                                     (SContinue)]),
+     @?= Right (SSelect "alt" [SCase (SelectCase (Var "true", SContinue) 
+                                          (SSend (Chan "c2") (Oper Plus (Var "a") (Const (IntVal 1))))),
+                               SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c1")) SContinue)]),
     testCaseBad "Process: ALT can only have one process per alternative"
      $ runIndentParser (do a <- parseProcess; eof; return a) () "" 
                         "ALT\n  true & c1 ? a\n    c2 ! a + 1\n    SKIP"
