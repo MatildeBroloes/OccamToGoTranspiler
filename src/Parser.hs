@@ -275,7 +275,7 @@ parseIf = try (do
 --             es <- parseExps
 --             p <- indented >> parseProcess
 --             return $ SCond es p
-parseBool :: IParser Cond
+parseBool :: IParser Case
 parseBool = do
              e <- parseExp
              p <- indented >> parseProcess
@@ -285,7 +285,7 @@ parseBool = do
 parseCase :: IParser Stmt
 parseCase = withBlock SSwitch (do symbol "CASE"; parseExp) parseOpt
 
-parseOpt :: IParser Cond
+parseOpt :: IParser Case
 parseOpt = try (do
                  symbol "ELSE"
                  p <- indented >> parseProcess

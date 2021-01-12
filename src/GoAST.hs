@@ -27,13 +27,13 @@ data Stmt = -- here, a statement is almost equivalent to a process in Occam
     SDef [Exp] [Exp]
   | SDecl [Exp] Spec Stmt
   | SSeq String [Stmt] -- evt lav disse til 1 type, hvor String siger hvilken slags
-  | SIf String [Cond]
-  | SSwitch Exp [Cond] -- a selector, and a number of options
+  | SIf String [Case]
+  | SSwitch Exp [Case] -- a selector, and a number of options
   | SGo String [Stmt]
   | SSelect String [Stmt]
   | SWhile Exp Stmt -- a boolean and a process
   | SFor Exp Exp Exp Stmt -- for replicated processes. index name(variable), base, count, process
-  | SCase Cond -- for cases in a select or switch
+  | SCase Case -- for cases in a select or switch
   | SCall Exp
   | SSend Exp Exp -- first exp is where to send, second is message
   | SReceive Exp Exp -- first is where to save message (can be NoneVal), second is which channel
@@ -41,7 +41,7 @@ data Stmt = -- here, a statement is almost equivalent to a process in Occam
   | SExit
   deriving (Eq, Show, Read)
 
-data Cond =
+data Case =
     IfCase Exp Stmt
   | SwitchCase [Exp] Stmt
   | SelectCase (Exp, Stmt) Stmt -- (boolean, input)
@@ -52,8 +52,7 @@ data Spec =
   | SChan DType
   deriving (Eq, Show, Read)
 
-data DType = BOOL | BYTE | INT | INT16 | INT32 | INT64 | REAL32 | REAL64
---  | DVar VName
+data DType = BOOL | BYTE | INT -- | INT16 | INT32 | INT64 | REAL32 | REAL64
   | DArray [Exp] DType
   deriving (Eq, Show, Read)
 
