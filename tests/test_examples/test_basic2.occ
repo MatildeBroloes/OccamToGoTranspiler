@@ -1,5 +1,0 @@
-PROC test2 (INT a, b, c, BOOL test)
-  INT x, y, z:
-  a,b := 1,2
-:
-

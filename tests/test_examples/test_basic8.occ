@@ -1,7 +1,0 @@
-PROC test8 (CHAN OF INT a)
-  PAR
-    a ! (BYTE a)
-    a ? tmp
-    square(a)
-    print (\"hej\")
-:

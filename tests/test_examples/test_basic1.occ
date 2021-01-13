@@ -1,4 +1,0 @@
-PROC test (INT a)
-  INT b:
-  a,b := 1,2
-:

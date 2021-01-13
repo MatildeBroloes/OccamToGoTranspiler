@@ -1,5 +1,0 @@
-PROC test7 (CHAN OF INT a)
-  INT tmp:
-  a ! (BYTE a)
-  a ? tmp
-:

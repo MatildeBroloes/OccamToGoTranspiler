@@ -1,7 +1,0 @@
-PROC test6 (INT a,b)
-  WHILE a < b
-    SEQ
-      a := a + 1
-  BOOL test:
-  test := TRUE
-:

@@ -1,1 +1,0 @@
-[FFun "test3" [Arg [Var "a",Var "b",Var "c"] (SVar INT)] [] (SDecl [Var "x",Var "y",Var "z"] (SVar INT) (SSeq "seq" [SDef [Var "a"] [Const (IntVal 1)],SDef [Var "b"] [Const (IntVal 2)]]))]
