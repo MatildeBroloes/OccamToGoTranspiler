@@ -1,0 +1,1 @@
+[FFun "count" [Arg [Var "out"] (SChan BYTE)] [] (SDecl [Var "c"] (SVar BYTE) (SSeq "seq" [SDef [Var "c"] [Const (IntVal 48)],SFor (Var "i") (Const (IntVal 0)) (Const (IntVal 10)) (SSeq "seq" [SSeq "seq" [SSend (Chan "out") (Var "c"),SDef [Var "c"] [Oper Plus (Var "c") (Const (IntVal 1))]]]),SSend (Chan "out") (Const (IntVal 10))]))]
