@@ -20,17 +20,18 @@ data Exp =
   | Call FName [Exp]
   | Not Exp
   | Array [Exp]
+  | Slice VName [Exp]
   | Conv DType Exp -- conversion, fx BYTE x for converting x to byte
   deriving (Eq, Show, Read)
 
 data Stmt = -- here, a statement is almost equivalent to a process in Occam
     SDef [Exp] [Exp]
   | SDecl [Exp] Spec Stmt
-  | SSeq String [Stmt] -- evt lav disse til 1 type, hvor String siger hvilken slags
-  | SIf String [Case]
+  | SSeq [Stmt] -- evt lav disse til 1 type, hvor String siger hvilken slags
+  | SIf [Case]
   | SSwitch Exp [Case] -- a selector, and a number of options
-  | SGo String [Stmt]
-  | SSelect String [Stmt]
+  | SGo [Stmt]
+  | SSelect [Stmt]
   | SWhile Exp Stmt -- a boolean and a process
   | SFor Exp Exp Exp Stmt -- for replicated processes. index name(variable), base, count, process
   | SCase Case -- for cases in a select or switch

@@ -4,6 +4,7 @@ module Parser where
 import GoAST
 import Text.Parsec hiding (State) -- exports ParseError type (?)
 import Text.Parsec.Indent
+import System.IO
 --import Control.Monad.State
 
 import Data.Char(isAscii, isPrint)
@@ -108,9 +109,14 @@ parseSpecifier = do
               
 --- Parse variable
 parseVar :: IParser Exp
-parseVar = do
-            v <- pName
-            return $ Var v
+parseVar = try (do
+                 name <- pName
+                 do symbol "["
+                 indexes <- parseArrayIndex
+                 return $ Slice name indexes)
+             <|> do
+                  v <- pName
+                  return $ Var v
 
 --- Parse channel
 parseChan :: IParser Exp
@@ -219,6 +225,15 @@ parseOperand =
        d <- pDigit
        return $ Const $ IntVal d
 
+-- Helper function for array indexing
+parseArrayIndex :: IParser [Exp]
+parseArrayIndex = do
+                   e <- parseExp
+                   symbol "]"
+                   choice [(do symbol "["; es <- parseArrayIndex; return $ e:es),
+                           (do return $ [e])]
+                   
+
 -- Replicator
 parseReplicator :: IParser (Exp, Exp, Exp)
 parseReplicator = do
@@ -258,23 +273,21 @@ parseSeq = try (do
                  symbol "SEQ"
                  (index, base, count) <- parseReplicator
                  p <- indented >> parseProcess
-                 return $ SFor index base count $ SSeq "seq" [p])
-             <|> withBlock SSeq (do symbol "SEQ"; return "seq") parseProcess
+                 return $ SFor index base count $ SSeq [p])
+             <|> do
+                  p <- withBlock' (symbol "SEQ") parseProcess
+                  return $ SSeq p
 
 parseIf :: IParser Stmt
 parseIf = try (do
                 symbol "IF"
                 (index, base, count) <- parseReplicator
                 p <- indented >> parseBool
-                return $ SFor index base count $ SIf "if" [p])
-            <|> withBlock SIf (do symbol "IF"; return "if") parseBool
+                return $ SFor index base count $ SIf [p])
+            <|> do
+                 p <- withBlock' (symbol "IF") parseBool
+                 return $ SIf p
 
-
---parseCond :: IParser Stmt
---parseCond = do
---             es <- parseExps
---             p <- indented >> parseProcess
---             return $ SCond es p
 parseBool :: IParser Case
 parseBool = do
              e <- parseExp
@@ -308,22 +321,30 @@ parsePar = try (do
                  symbol "PAR"
                  (index, base, count) <- parseReplicator
                  p <- indented >> (try parseProcess <|> parseCall)
-                 return $ SFor index base count $ SGo "par" [p])
-             <|> withBlock SGo (do symbol "PAR"; return "par") (try parseProcess <|> parseCall)
+                 return $ SFor index base count $ SGo [p])
+             <|> do
+                  p <- withBlock' (symbol "PAR") (try parseProcess <|> parseCall)
+                  return $ SGo p
 
 parseCall :: IParser Stmt
 parseCall = do
              c <- parseOperand
              return $ SCall c
 
--- TODO: alternation with no alternatives behaves like a STOP
--- TODO: alternations can also be replicated
 parseAlt :: IParser Stmt
-parseAlt = do
-            p <- withBlock SSelect (do symbol "ALT"; return "alt") parseAlternative
-            case p of
-              SSelect "alt" [] -> return $ SExit
-              _ -> return $ p
+parseAlt = try (do
+                 symbol "ALT"
+                 (index, base, count) <- parseReplicator
+                 p <- indented >> parseAlternative
+                 a <- case p of
+                        SSelect [] -> return $ SExit
+                        _ -> return $ p
+                 return $ SFor index base count $ SSelect [a])
+             <|> (do
+                   p <- withBlock' (symbol "ALT") parseAlternative
+                   case p of
+                     [] -> return $ SExit
+                     _ -> return $ SSelect p)
 
 parseAlternative :: IParser Stmt
 parseAlternative = try parseAlt <|> (do
@@ -363,13 +384,13 @@ parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|>
                try parseIn <|> try parseOut <|> try parseAlt <|>
                try (do (es, s) <- parseDecl; p <- parseProcess; return $ SDecl es s p) <|>
                try (do symbol "SKIP"; return $ SContinue) <|> 
-               try (do symbol "STOP"; return $ SExit) <?> "process"
+               try (do symbol "STOP"; return $ SExit) -- <?> "process"
 
 -- parsing input arguments for procedures etc
 parseFVars :: IParser [Exp]
 parseFVars = do
               v <- parseVar
-              vs <- try (do symbol ","; parseFVars) <|> (do return $ [])
+              vs <- try (do symbol ","; notFollowedBy parseFormals; parseFVars) <|> (do return $ [])
               return $ v:vs
 
 parseFormals :: IParser FArgs
@@ -409,3 +430,16 @@ parseProg = do
 
 parseString :: String -> Either ParseError Program
 parseString s = runIndentParser (do a <- parseProg; eof; return a) () "" s
+
+-- function for writing result to file
+writeParse :: String -> String -> IO ()
+writeParse f s = do
+                  file <- openFile f ReadMode
+                  p <- hGetContents file
+                  let ast = parseString p
+                   in case ast of
+                        Left err -> putStrLn (show err) --"No parse"
+                        Right a -> do
+                                    writeFile (s ++ ".txt") (show a)
+                  hClose file
+
