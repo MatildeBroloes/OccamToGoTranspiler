@@ -24,7 +24,7 @@ generateVal NoneVal = "nil"
 generateVal (IntVal i) = show i
 generateVal (HexVal h) = h
 generateVal (ByteVal b) = b
-generateVal (StringVal s) = s
+generateVal (StringVal s) = "\"" ++ s ++ "\""
 
 -- Generator for Types
 generateDType :: DType -> String
@@ -140,7 +140,7 @@ generateCase (SelectCase (e,(SReceive to from)) stmt) i =
       var = generateExp to
       chan = generateExp from
       body = generateStmt stmt (i ++ "  ")
-   in concat[i, "case ", var, " := <- func() {if ", c, " {return ", chan, "} return nil}():\n", body]
+   in concat[i, "case ", var, " := <- func() {if ", c, " {return ", chan, "} return nil}() :\n", body]
 generateCase (SelectCase (_, SContinue) _) i = i ++ "Not implemented: Case type cannot be generated"
 generateCase _ _ = "error" -- should never occur
 
@@ -160,7 +160,7 @@ generateCases ((SelectCase (e,s) stmt):cs) i =
         (SReceive e1 e2) ->
           let v = generateExp e1
               c = generateExp e2
-           in concat [i, "case ", " :=<- func() {if ", b, " {return ", c, "} return nil}()\n", i, st]
+           in concat [i, "case ", " :=<- func() {if ", b, " {return ", c, "} return nil}() :\n", i, st]
         (SContinue) -> "Guards with bool and SKIP not implemented"
 generateCases _ _ = "error"
 
@@ -216,7 +216,7 @@ generateStmt (SSeq (s:ss)) i = let st = generateStmt s i
 generateStmt (SSeq []) _ = ""
 generateStmt (SIf cs) i = 
   let cases = generateCases cs i
-      post = "else {\n" ++ i ++ "os.Exit(1)\n" ++ i ++ "}"
+      post = " else { os.Exit(1) }"
    in i ++ cases ++ post
 generateStmt (SSwitch e cs) i = 
   let sel = generateExp e
@@ -233,7 +233,7 @@ generateStmt (SSelect cs) i =
    in i ++ "select {\n" ++ cases ++ "\n" ++ i ++ "}"
 generateStmt (SWhile e stmt) i = let c = generateExp e
                                      s = generateStmt stmt (i ++ "  ")
-                                  in i ++ "for " ++ c ++ "{\n" ++ s ++ "\n" ++ i ++ "}"
+                                  in i ++ "for " ++ c ++ " {\n" ++ s ++ "\n" ++ i ++ "}"
 generateStmt (SFor e1 e2 e3 stmt) i = 
   let index = generateExp e1
       base = generateExp e2
@@ -262,26 +262,29 @@ generateFun (FFun name args specs stmt) =
   let nm = generateName name
       as = generateArgs args
       ss = generateSpecx specs -- actually only relevant when occam functions are implemented
---      cs = generateClose args "  "
-      cs = "  defer close(out)"
       st = generateStmt stmt "  "
-   in "func " ++ nm ++ "(" ++ as ++ ")" ++ ss ++ "{\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
+   in "func " ++ nm ++ "(" ++ as ++ ")" ++ ss ++ "{\n" ++ st ++ "\n}"
 
 -- Generator for Program
 generateProg :: Program -> String
 generateProg [] = ""
-generateProg [FFun name args [] stmt] = let n = generateName name
-                                            main = unlines ["func main() {",
-                                                            "  in := make(chan byte, 10)",
-                                                            "  out := make(chan byte, 10)",
-                                                            "  err := make(chan byte, 10)\n",
-                                                            "  go " ++ n ++"(in, out, err)\n",
-                                                            "  for i := range out {",
-                                                            "    fmt.Print(string(i))",
-                                                            "  }",
-                                                            "}"]
-                                            fun = generateFun (FFun name args [] stmt)
-                                         in fun ++ "\n\n" ++ main -- creating main fun
+generateProg [FFun name args [] stmt] = -- only for generating the top-level function
+  let n = generateName name
+      nm = generateName name
+      as = generateArgs args
+      cs = "  defer close(out)"
+      st = generateStmt stmt "  "
+      fun = "func " ++ nm ++ "(" ++ as ++ ") {\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
+      main = unlines ["func main() {",
+                      "  in := make(chan byte, 10)",
+                      "  out := make(chan byte, 10)",
+                      "  err := make(chan byte, 10)\n",
+                      "  go " ++ n ++"(in, out, err)\n",
+                      "  for i := range out {",
+                      "    fmt.Print(string(i))",
+                      "  }",
+                      "}"]
+   in fun ++ "\n\n" ++ main
 generateProg ((FFun name args specs stmt):fs) = let n = generateName name
                                                     fun = generateFun (FFun n args specs stmt)
                                                     funs = generateProg fs
