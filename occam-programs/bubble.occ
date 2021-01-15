@@ -1,4 +1,4 @@
-PROC bubble(CHAN OF BYTE out)
+PROC bubble(CHAN OF BYTE in, out, err)
   BOOL swapped:
   BYTE tmp:
   [5]INT nums:
