@@ -3,4 +3,4 @@
 *.swp
 *.swo
 
-dist-newstyle/
+transpiler/dist-newstyle/
