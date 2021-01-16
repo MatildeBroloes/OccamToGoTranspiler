@@ -238,7 +238,7 @@ parserTests =
      @?= Right (Const (HexVal "5F")),
     testCase "Operands: can be byte values"
      $ runIndentParser parseOperand () "" "*#5F"
-     @?= Right (Const (ByteVal "5F")),
+     @?= Right (Const (ByteVal (IntVal 95))),
     testCase "Operands: can be TRUE"
      $ runIndentParser parseOperand () "" "TRUE"
      @?= Right (Const TrueVal),
@@ -247,7 +247,7 @@ parserTests =
      @?= Right (Const FalseVal),
     testCase "Operands: can be bytes"
      $ runIndentParser parseOperand () "" "\'c\'"
-     @?= Right (Const (ByteVal "c")),
+     @?= Right (Const (ByteVal (CharVal 'c'))),
     testCase "Operands: can be lists of expressions"
      $ runIndentParser parseOperand () "" "[a, 5+5, NOT hej]"
      @?= Right (Array [Var "a", 
@@ -341,7 +341,9 @@ parserTests =
      $ runIndentParser parseProcess () "" 
                        "CASE l\n  'a','b','c'\n    x := TRUE\n  ELSE\n    x := FALSE"
      @?= Right (SSwitch (Var "l") 
-                        [SwitchCase [Const (ByteVal "a"), Const (ByteVal "b"), Const (ByteVal "c")] 
+                        [SwitchCase [Const (ByteVal (CharVal 'a')), 
+                                     Const (ByteVal (CharVal 'b')),
+                                     Const (ByteVal (CharVal 'c'))] 
                                     (SDef [Var "x"] [Const TrueVal]),
                          SwitchCase [Const TrueVal] (SDef [Var "x"] [Const FalseVal])]),
     testCaseBad "Process: CASE can have only one process per option"
@@ -498,8 +500,11 @@ generatorTests =
      $ generateVal (HexVal "1D")
      @?= "1D",
     testCase "Values: generating ByteVals"
-     $ generateVal (ByteVal "3F")
-     @?= "3F",
+     $ generateVal (ByteVal (IntVal 95))
+     @?= "95",
+    testCase "Values: generating ByteVals"
+     $ generateVal (ByteVal (CharVal 'a'))
+     @?= "\'a\'",
     testCase "Values: generating StringVals"
      $ generateVal (StringVal "hello world!")
      @?= "\"hello world!\"",
@@ -680,16 +685,16 @@ generatorTests =
 ---- Select
     testCase "Statements: select-statements containing one case"
      $ generateStmt (SSelect [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c")) (SSend (Chan "c") (Const (IntVal 42))))]) ""
-     @?= "select {\ncase a := <- func() {if true {return c} return nil}() :\n  c <- 42\n}",
+     @?= "select {\ncase a = <-func() chan byte {if true {return c} else {return nil}}() :\n  c <- 42\n}",
     testCase "Statements: select-statements containing multiple cases"
      $ generateStmt (SSelect [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c1")) (SSend (Chan "c2") (Const (IntVal 42)))),
                               SCase (SelectCase (Const TrueVal, SReceive (Var "b") (Chan "c2")) (SSend (Chan "c1") (Var "b")))]) ""
-     @?= "select {\ncase a := <- func() {if true {return c1} return nil}() :\n  c2 <- 42\ncase b := <- func() {if true {return c2} return nil}() :\n  c1 <- b\n}",
+     @?= "select {\ncase a = <-func() chan byte {if true {return c1} else {return nil}}() :\n  c2 <- 42\ncase b = <-func() chan byte {if true {return c2} else {return nil}}() :\n  c1 <- b\n}",
     testCase "Statements: select-statements where guard contains both boolean and input"
      $ generateStmt (SSelect [SCase (SelectCase (Oper Geq (Var "a") (Const (IntVal 13)), 
                                                  SReceive (Var "a") (Chan "c")) 
                                                 (SSend (Chan "c") (Const (IntVal 42))))]) ""
-     @?= "select {\ncase a := <- func() {if a >= 13 {return c} return nil}() :\n  c <- 42\n}",
+     @?= "select {\ncase a = <-func() chan byte {if a >= 13 {return c} else {return nil}}() :\n  c <- 42\n}",
 ---- While-loops
     testCase "Statements: while-loop"
      $ generateStmt (SWhile (Oper Neq (Var "a") (Const (IntVal 0))) (SSend (Chan "c") (Var "a"))) ""
@@ -730,8 +735,11 @@ generatorTests =
 -- Generate Functions
     testCase "Functions: generating generic function"
      $ generateFun (FFun "wham" [Arg [Var "bam", Var "pow"] (SVar INT)] [] (SDecl [Var "c"] (SChan INT) (SCall (Call "puff" [Var "bam", Var "pow", Var "c"]))))
-     @?= "func wham(bam, pow int) {\n  var c = make(chan int)\n  puff(bam, pow, c)\n}"
+     @?= "func wham(bam, pow int) {\n  var c = make(chan int)\n  puff(bam, pow, c)\n}",
 -- Generate Program -- tested by running example programs
+    testCase "Program: generating empty program"
+     $ generateProg []
+     @?= ""
   ]
 
 

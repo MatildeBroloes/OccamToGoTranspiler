@@ -5,6 +5,7 @@ import GoAST
 import Text.Parsec hiding (State) -- exports ParseError type (?)
 import Text.Parsec.Indent
 import System.IO
+import Numeric (readHex)
 --import Control.Monad.State
 
 import Data.Char(isAscii, isPrint)
@@ -193,10 +194,13 @@ parseOperand =
       <|>
   try (do
         symbol "*#"
-        b1 <- hexDigit
-        b2 <- hexDigit
+        h1 <- hexDigit
+        h2 <- hexDigit
         notFollowedBy hexDigit
-        return $ Const $ ByteVal (b1:[b2]))
+        let (x1,_):_ = readHex [h1]
+            (x2,_):_ = readHex [h2]
+         in return $ Const $ ByteVal $ IntVal ((x1*16) + x2))
+--        return $ Const $ ByteVal (b1:[b2]))
       <|>
   try (do
         symbol "TRUE"
@@ -219,7 +223,7 @@ parseOperand =
         symbol "\'"
         c <- pChar
         symbol "\'"
-        return $ Const (ByteVal [c]))
+        return $ Const $ ByteVal $ CharVal c)
       <|>
       do
        d <- pDigit

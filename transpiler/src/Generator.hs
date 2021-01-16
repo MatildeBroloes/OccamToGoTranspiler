@@ -23,7 +23,8 @@ generateVal FalseVal = "false"
 generateVal NoneVal = "nil"
 generateVal (IntVal i) = show i
 generateVal (HexVal h) = h
-generateVal (ByteVal b) = b
+generateVal (ByteVal (CharVal b)) = "\'" ++ [b] ++ "\'"
+generateVal (ByteVal (IntVal b)) = show b
 generateVal (StringVal s) = "\"" ++ s ++ "\""
 
 -- Generator for Types
@@ -140,7 +141,7 @@ generateCase (SelectCase (e,(SReceive to from)) stmt) i =
       var = generateExp to
       chan = generateExp from
       body = generateStmt stmt (i ++ "  ")
-   in concat[i, "case ", var, " := <- func() {if ", c, " {return ", chan, "} return nil}() :\n", body]
+   in concat[i, "case ", var, " = <-func() chan byte {if ", c, " {return ", chan, "} else {return nil}}() :\n", body]
 generateCase (SelectCase (_, SContinue) _) i = i ++ "Not implemented: Case type cannot be generated"
 generateCase _ _ = "error" -- should never occur
 
@@ -160,7 +161,7 @@ generateCases ((SelectCase (e,s) stmt):cs) i =
         (SReceive e1 e2) ->
           let v = generateExp e1
               c = generateExp e2
-           in concat [i, "case ", " :=<- func() {if ", b, " {return ", c, "} return nil}() :\n", i, st]
+           in concat [i, "case ", " = <-func() chan byte {if ", b, " {return ", c, "} else {return nil}}() :\n", i, st]
         (SContinue) -> "Guards with bool and SKIP not implemented"
 generateCases _ _ = "error"
 
@@ -275,15 +276,14 @@ generateProg [FFun name args [] stmt] = -- only for generating the top-level fun
       cs = "  defer close(out)"
       st = generateStmt stmt "  "
       fun = "func " ++ nm ++ "(" ++ as ++ ") {\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
-      main = unlines ["func main() {",
-                      "  in := make(chan byte, 10)",
-                      "  out := make(chan byte, 10)",
-                      "  err := make(chan byte, 10)\n",
-                      "  go " ++ n ++"(in, out, err)\n",
-                      "  for i := range out {",
-                      "    fmt.Print(string(i))",
-                      "  }",
-                      "}"]
+      main = 
+        unlines ["func main() {",
+                 "  in, out, err := make(chan byte, 10), make(chan byte, 10), make(chan byte, 10)\n",
+                 "  go " ++ n ++"(in, out, err)\n",
+                 "  for i := range out {",
+                 "    fmt.Print(string(i))",
+                 "  }",
+                 "}"]
    in fun ++ "\n\n" ++ main
 generateProg ((FFun name args specs stmt):fs) = let n = generateName name
                                                     fun = generateFun (FFun n args specs stmt)

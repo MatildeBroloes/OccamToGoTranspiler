@@ -7,7 +7,8 @@ data Val =
   | IntVal Int
 --  | RealVal Float
   | HexVal String
-  | ByteVal String
+  | ByteVal Val
+  | CharVal Char
   | StringVal String
  -- | ListVal [Val]
   deriving (Eq, Show, Read)
