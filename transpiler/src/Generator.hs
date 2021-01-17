@@ -291,7 +291,7 @@ write f s = do
              file <- openFile f ReadMode
              p <- hGetContents file
              let code = generateProg (read p)
-                 pre = "package main\n\nimport \"fmt\"\nimport \"sync\"\nimort \"os\"\n\n"
+                 pre = "package main\n\nimport \"fmt\"\nimport \"sync\"\nimport \"os\"\n\n"
               in do
                   writeFile (s ++ ".go") (pre ++ code)
              hClose file
