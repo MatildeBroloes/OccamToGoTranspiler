@@ -273,8 +273,8 @@ generateProg [FFun name args [] stmt] = -- only for generating the top-level fun
       fun = "func " ++ nm ++ "(" ++ as ++ ") {\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
       main = 
         unlines ["func main() {",
-                 "  in, out, err := make(chan byte, 10), make(chan byte, 10), make(chan byte, 10)\n",
-                 "  go " ++ n ++"(in, out, err)\n",
+                 "  out := make(chan byte, 10)\n",
+                 "  go " ++ n ++"(out)\n",
                  "  for i := range out {",
                  "    fmt.Print(string(i))",
                  "  }",

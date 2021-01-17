@@ -1,4 +1,4 @@
-PROC alt(CHAN OF BYTE in, out, err)
+PROC alt(CHAN OF BYTE out)
   BYTE tmp:
   CHAN OF BYTE c1, c2:
   SEQ
