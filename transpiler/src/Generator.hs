@@ -2,13 +2,8 @@
 module Generator where
 
 import GoAST
---import Text.StringRandom
 import Test.RandomStrings
 import System.IO
---import System.Random
---import Control.Monad.Writer
-
---type Generator a = Writer [String] (Either String a)
 
 -- Generator for names -- should ensure that dots are replaced with underscores
 generateName :: String -> String
@@ -74,8 +69,8 @@ generateExp (Not e) = "!" ++ (generateExp e)
 generateExp (Call name args) = (generateName name) ++ "(" ++ (generateExps args) ++ ")"
 generateExp (Array es) = 
   let exps = generateExps es
-      t = "int" -- this should be changed to infer the type of the array
-   in concat ["[...]", t, "{", exps, "}"] -- this is probably not correct, todo later
+      t = "int" -- deficiency: this should be changed to infer the type of the array
+   in concat ["[...]", t, "{", exps, "}"]
 generateExp (Slice s exps) = let v = generateName s
                                  indexes = generateSlice exps
                               in v ++ indexes
@@ -122,7 +117,7 @@ generateSpecs [s] = generateSpec s
 generateSpecs (s:ss) = let sp = generateSpec s
                            sps = generateSpecs ss
                         in sp ++ ", " ++ sps
-generateSpecs _ = "error" -- should never occur
+generateSpecs _ = "error" -- TODO: proper error handling
 
 generateSpecx :: [Spec] -> String
 generateSpecx [] = " "
@@ -143,7 +138,7 @@ generateCase (SelectCase (e,(SReceive to from)) stmt) i =
       body = generateStmt stmt (i ++ "  ")
    in concat[i, "case ", var, " = <-func() chan byte {if ", c, " {return ", chan, "} else {return nil}}() :\n", body]
 generateCase (SelectCase (_, SContinue) _) i = i ++ "Not implemented: Case type cannot be generated"
-generateCase _ _ = "error" -- should never occur
+generateCase _ _ = "error" -- TODO: proper error handling
 
 generateCases :: [Case] -> String -> String
 generateCases [c] i = generateCase c i
@@ -171,9 +166,9 @@ generateSelect [(SCase c)] i = generateCase c i
 generateSelect ((SCase c):cs) i = let case1 = generateCase c i
                                       cases = generateSelect cs i
                                    in case1 ++ "\n" ++ cases
-generateSelect _ _ = "error" -- should never occur as alternation must have one case
+generateSelect _ _ = "error" -- TODO: proper error handling
 
--- Helper function for parallels
+-- Helper function for generating wait group functions for parallels
 generateWGFun :: Stmt -> String -> String -> String
 generateWGFun s i wg = let st = generateStmt s (i ++ "  ")
                         in unlines [i ++ wg ++ ".Add(1)",
@@ -196,7 +191,8 @@ generateChans (e:es) t i = let c = generateExp e
                             in i ++ "var " ++ c ++ " = make(chan " ++ t ++ ")\n" ++ cs
 
 -- Generator for Statements
-generateStmt :: Stmt -> String -> String -- second input argument for indentation
+-- The second input argument is for ensuring correct indentation
+generateStmt :: Stmt -> String -> String
 generateStmt (SDef es1 es2) i = let exs1 = generateExps es1
                                     exs2 = generateExps es2
                                  in i ++ exs1 ++ " = " ++ exs2
@@ -224,7 +220,7 @@ generateStmt (SSwitch e cs) i =
       opt = generateCases cs i
    in i ++ "switch " ++ sel ++ " {\n" ++ opt ++ "\n}" 
 generateStmt (SGo ss) i =
-  let wg = "waitGroup" -- should be generated randomly
+  let wg = "waitGroup" -- The name of the wait group should be generated instead of this
       pre = i ++ "var " ++ wg ++ " sync.WaitGroup\n"
       funs = generateWGFuns ss i wg
       post = i ++ wg ++ ".Wait()"
@@ -245,7 +241,6 @@ generateStmt (SFor e1 e2 e3 stmt) i =
         0 -> ""
         _ -> concat [i, "for ", index, " := ", base, "; ", index, " < ", lim,
                      "; ", index, "++ {\n", body, "\n", i, "}"]
---generateStmt (SCase c) i = generateCase c i
 generateStmt (SCall e) i = i ++ (generateExp e)
 generateStmt (SSend e1 e2) i = i ++ (generateExp e1) ++ " <- " ++ (generateExp e2)
 generateStmt (SReceive e1 e2) i = let v = generateExp e1
@@ -255,14 +250,14 @@ generateStmt (SReceive e1 e2) i = let v = generateExp e1
                                         _ -> i ++ v ++ " = <-" ++ c
 generateStmt SContinue _ = ""
 generateStmt SExit i = i ++ "os.Exit(1)"
-generateStmt _ _ = "error"
+generateStmt _ _ = "error" -- TODO: proper error handling
 
 -- Generator for Function
 generateFun :: Fun -> String
 generateFun (FFun name args specs stmt) =
   let nm = generateName name
       as = generateArgs args
-      ss = generateSpecx specs -- actually only relevant when occam functions are implemented
+      ss = generateSpecx specs -- not relevant for procedures
       st = generateStmt stmt "  "
    in "func " ++ nm ++ "(" ++ as ++ ")" ++ ss ++ "{\n" ++ st ++ "\n}"
 
@@ -296,7 +291,7 @@ write f s = do
              file <- openFile f ReadMode
              p <- hGetContents file
              let code = generateProg (read p)
-                 pre = "package main\n\nimport \"fmt\"\nimport \"sync\"\n\n"
+                 pre = "package main\n\nimport \"fmt\"\nimport \"sync\"\nimort \"os\"\n\n"
               in do
                   writeFile (s ++ ".go") (pre ++ code)
              hClose file

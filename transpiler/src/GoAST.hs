@@ -5,12 +5,10 @@ module GoAST where
 data Val =
     TrueVal | FalseVal | NoneVal
   | IntVal Int
---  | RealVal Float
   | HexVal String
   | ByteVal Val
   | CharVal Char
   | StringVal String
- -- | ListVal [Val]
   deriving (Eq, Show, Read)
 
 data Exp =
@@ -22,23 +20,23 @@ data Exp =
   | Not Exp
   | Array [Exp]
   | Slice VName [Exp]
-  | Conv DType Exp -- conversion, fx BYTE x for converting x to byte
+  | Conv DType Exp
   deriving (Eq, Show, Read)
 
-data Stmt = -- here, a statement is almost equivalent to a process in Occam
+data Stmt = 
     SDef [Exp] [Exp]
   | SDecl [Exp] Spec Stmt
-  | SSeq [Stmt] -- evt lav disse til 1 type, hvor String siger hvilken slags
+  | SSeq [Stmt]
   | SIf [Case]
-  | SSwitch Exp [Case] -- a selector, and a number of options
+  | SSwitch Exp [Case]
   | SGo [Stmt]
   | SSelect [Stmt]
-  | SWhile Exp Stmt -- a boolean and a process
-  | SFor Exp Exp Exp Stmt -- for replicated processes. index name(variable), base, count, process
-  | SCase Case -- for cases in a select or switch
+  | SWhile Exp Stmt
+  | SFor Exp Exp Exp Stmt
+  | SCase Case
   | SCall Exp
-  | SSend Exp Exp -- first exp is where to send, second is message
-  | SReceive Exp Exp -- first is where to save message (can be NoneVal), second is which channel
+  | SSend Exp Exp
+  | SReceive Exp Exp
   | SContinue
   | SExit
   deriving (Eq, Show, Read)
@@ -46,7 +44,7 @@ data Stmt = -- here, a statement is almost equivalent to a process in Occam
 data Case =
     IfCase Exp Stmt
   | SwitchCase [Exp] Stmt
-  | SelectCase (Exp, Stmt) Stmt -- (boolean, input)
+  | SelectCase (Exp, Stmt) Stmt
   deriving (Eq, Show, Read)
 
 data Spec =
@@ -54,7 +52,7 @@ data Spec =
   | SChan DType
   deriving (Eq, Show, Read)
 
-data DType = BOOL | BYTE | INT -- | INT16 | INT32 | INT64 | REAL32 | REAL64
+data DType = BOOL | BYTE | INT
   | DArray [Exp] DType
   deriving (Eq, Show, Read)
 

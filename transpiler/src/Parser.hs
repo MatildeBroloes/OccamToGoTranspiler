@@ -2,11 +2,10 @@
 module Parser where
 
 import GoAST
-import Text.Parsec hiding (State) -- exports ParseError type (?)
+import Text.Parsec hiding (State)
 import Text.Parsec.Indent
 import System.IO
 import Numeric (readHex)
---import Control.Monad.State
 
 import Data.Char(isAscii, isPrint)
 
@@ -18,7 +17,7 @@ type IParser a = IndentParser String () a
 onlySpace :: IParser ()
 onlySpace = skipMany (satisfy (\x -> x == ' '))
 
---- Skips whitespace and comments
+--- Skips whitespace
 lexeme :: IParser a -> IParser a
 lexeme p = do a <- p; spaces; return a
 
@@ -47,7 +46,7 @@ pName = lexeme $ do
                   if c:cs `notElem` reserved then return $ c:cs
                   else fail "Name must not be reserved word"
 
---- Digits (and hex.digits)
+--- Digits and hex.digits
 pDigit :: IParser Int
 pDigit = lexeme $ do ds <- many digit
                      return $ read ds
@@ -83,6 +82,7 @@ pString = do
            return s
 
 -- Parser functions --
+--- Parse data type
 parseDType :: IParser DType
 parseDType = 
   try (do string "BOOL"; notFollowedBy (alphaNum <|> char '.'); return $ BOOL) <|>
@@ -97,6 +97,7 @@ parseDType =
             _ -> return $ DArray [e] d )
     <?> "data type"
 
+--- Parse Specifier
 parseSpecifier :: IParser Spec
 parseSpecifier = do
                   symbol "CHAN"
@@ -163,13 +164,14 @@ parseExp = try (do
                    <|> try (do symbol "OR"; o2 <- parseOperand; return $ Oper Or o1 o2)
                    <|> (do return $ o1))
 
--- parse list of 0 or more expressions, separated by commas
+--- Parse list of 0 or more expressions, separated by commas
 parseExps :: IParser [Exp]
 parseExps = do
              e <- parseExp
              choice [(do symbol ","; es <- parseExps; return $ e:es),
                      (do return $ [e])]
 
+--- Parse Operand
 parseOperand :: IParser Exp
 parseOperand =
   try (do
@@ -200,7 +202,6 @@ parseOperand =
         let (x1,_):_ = readHex [h1]
             (x2,_):_ = readHex [h2]
          in return $ Const $ ByteVal $ IntVal ((x1*16) + x2))
---        return $ Const $ ByteVal (b1:[b2]))
       <|>
   try (do
         symbol "TRUE"
@@ -229,7 +230,7 @@ parseOperand =
        d <- pDigit
        return $ Const $ IntVal d
 
--- Helper function for array indexing
+--- Helper function for array indexing
 parseArrayIndex :: IParser [Exp]
 parseArrayIndex = do
                    e <- parseExp
@@ -238,7 +239,7 @@ parseArrayIndex = do
                            (do return $ [e])]
                    
 
--- Replicator
+--- Replicator
 parseReplicator :: IParser (Exp, Exp, Exp)
 parseReplicator = do
                    index <- parseVar
@@ -250,7 +251,7 @@ parseReplicator = do
                    count <- parseExp
                    return $ (index, base, count)
 
--- Parsers for different types of processes
+--- Parsers for different types of processes
 parseAsgn :: IParser  Stmt
 parseAsgn = do
              vs <- parseVars
@@ -373,7 +374,7 @@ parseGuard = try (do
                    return $ (b, SContinue)) <?>
              "guard"
 
--- this is equvalent to a specification containing a declaration. for true syntax, a specification should be able to contain either a declaration, or a definition
+--- Parse Declaration
 parseDecl :: IParser ([Exp], Spec)
 parseDecl = do
              s <- parseSpecifier
@@ -388,9 +389,9 @@ parseProcess = try parseSeq <|> try parseIf <|> try parseCase <|>
                try parseIn <|> try parseOut <|> try parseAlt <|>
                try (do (es, s) <- parseDecl; p <- parseProcess; return $ SDecl es s p) <|>
                try (do symbol "SKIP"; return $ SContinue) <|> 
-               try (do symbol "STOP"; return $ SExit) -- <?> "process"
+               try (do symbol "STOP"; return $ SExit)
 
--- parsing input arguments for procedures etc
+--- Parse input arguments for procedures etc
 parseFVars :: IParser [Exp]
 parseFVars = do
               v <- parseVar
@@ -407,7 +408,7 @@ parseFormals = do
                <|>
                do return $ []
 
--- Parsing procedure
+--- Parsing procedure
 parseProc :: IParser Fun
 parseProc = do
              symbol "PROC"
@@ -416,33 +417,36 @@ parseProc = do
              args <- parseFormals
              symbol ")"
              body <- indented >> parseProcess
-             checkIndent >> symbol ":" -- how to use same??
+             checkIndent >> symbol ":"
              return $ FFun fname args [] body
 
+--- Parsing definitions
 parseDef :: IParser Fun
 parseDef = parseProc -- here we could extend with fx parsing of functions
 
 parseDefs :: IParser Program
 parseDefs = do 
-             ds <- manyTill parseDef eof -- how to ensure that each def has a line break between
-             return $ ds -- manyTill should return list (of functions)
+             ds <- manyTill parseDef eof
+             return $ ds
 
+-- Parsing Program
 parseProg :: IParser Program
 parseProg = do
-             lexeme $ return () -- looking for white space or comments in the beginning of program
+             lexeme $ return () -- looking for white space in the beginning of program
              parseDefs
 
+-- Parseing program as string, returning either error or parsed proram
 parseString :: String -> Either ParseError Program
 parseString s = runIndentParser (do a <- parseProg; eof; return a) () "" s
 
--- function for writing result to file
+-- Function for writing result to file
 writeParse :: String -> String -> IO ()
 writeParse f s = do
                   file <- openFile f ReadMode
                   p <- hGetContents file
                   let ast = parseString p
                    in case ast of
-                        Left err -> putStrLn (show err) --"No parse"
+                        Left err -> putStrLn (show err)
                         Right a -> do
                                     writeFile (s ++ ".txt") (show a)
                   hClose file
