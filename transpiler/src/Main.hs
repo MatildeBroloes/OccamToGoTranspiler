@@ -9,4 +9,4 @@ main :: IO ()
 main = UnitTest.main
 
 trans :: String -> String -> IO ()
-trans s f = do writeParse s f; write (f ++ ".txt") f
+trans s f = do writeParse s f; writeGen (f ++ ".txt") f

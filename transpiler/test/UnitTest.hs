@@ -15,7 +15,10 @@ main :: IO ()
 main = defaultMain $ localOption (mkTimeout 1000000) tests
 
 tests :: TestTree
-tests = testGroup "Unit Tests" [parserTests, generatorTests] -- put test trees here
+tests = testGroup "Unit Tests" [parserTests, generatorTests]
+
+parserTests :: TestTree
+parserTests = testGroup "Parser Tests" [parsertests]
 
 -- For doing negative testing (taken from AP exam 2020)
 testCaseBad s t =
@@ -28,8 +31,8 @@ testCaseBad s t =
 -- Testing Parser --
 --------------------
 
-parserTests :: TestTree
-parserTests =
+parsertests :: TestTree
+parsertests =
  testGroup "Parser Tests"
   [
 -- Parse Names
@@ -470,291 +473,460 @@ parserTests =
 -----------------------
 
 generatorTests :: TestTree
-generatorTests =
- testGroup "Generator Tests"
-  [
--- Generate Names
-    testCase "Names: generating name from empty string"
-     $ generateName ""
-     @?= "",
-    testCase "Names: generate name consisting of alpha numerics"
-     $ generateName "h3ll0Wo4lD"
-     @?= "h3ll0Wo4lD",
-    testCase "Names: dots are changed to underscores"
-     $ generateName "h3.ll0"
-     @?= "h3_ll0",
--- Generate Values
-    testCase "Values: generating TrueVals"
-     $ generateVal TrueVal
-     @?= "true",
-    testCase "Values: generating FalseVals"
-     $ generateVal FalseVal
-     @?= "false",
-    testCase "Values: generating NoneVals"
-     $ generateVal NoneVal
-     @?= "nil",
-    testCase "Values: generating IntVals"
-     $ generateVal (IntVal 42)
-     @?= "42",
-    testCase "Values: generating HexVals"
-     $ generateVal (HexVal "1D")
-     @?= "1D",
-    testCase "Values: generating ByteVals"
-     $ generateVal (ByteVal (IntVal 95))
-     @?= "95",
-    testCase "Values: generating ByteVals"
-     $ generateVal (ByteVal (CharVal 'a'))
-     @?= "\'a\'",
-    testCase "Values: generating StringVals"
-     $ generateVal (StringVal "hello world!")
-     @?= "\"hello world!\"",
--- Generate Data Types
-    testCase "DTypes: generating INTs"
-     $ generateDType INT
-     @?= "int",
-    testCase "DTypes: generating BOOLs"
-     $ generateDType BOOL
-     @?= "bool",
-    testCase "DTypes: generating BYTEs"
-     $ generateDType BYTE
-     @?= "byte",
-    testCase "DTypes: generating one dimensional array"
-     $ generateDType (DArray [Const (IntVal 5)] INT)
-     @?= "[5]int",
-    testCase "DTypes: generating multi dimensional array"
-     $ generateDType (DArray [Const (IntVal 5),Const (IntVal 4),Const (IntVal 2)] BOOL)
-     @?= "[5][4][2]bool",
--- Generate Operator
-    testCase "Operators: generating '+'"
-     $ generateOper Plus
-     @?= "+",
-    testCase "Operators: generating '-'"
-     $ generateOper Minus
-     @?= "-",
-    testCase "Operators: generating '*'"
-     $ generateOper Times
-     @?= "*",
-    testCase "Operators: generating '/'"
-     $ generateOper Div
-     @?= "/",
-    testCase "Operators: generating '\\'"
-     $ generateOper Mod
-     @?= "\\",
-    testCase "Operators: generating 'Eq'"
-     $ generateOper Eq
-     @?= "==",
-    testCase "Operators: generating 'Neq'"
-     $ generateOper Neq
-     @?= "!=",
-    testCase "Operators: generating 'Less'"
-     $ generateOper Less
-     @?= "<",
-    testCase "Operators: generating 'Greater'"
-     $ generateOper Greater
-     @?= ">",
-    testCase "Operators: generating 'Geq'"
-     $ generateOper Geq
-     @?= ">=",
-    testCase "Operators: generating 'Leq'"
-     $ generateOper Leq
-     @?= "<=",
-    testCase "Operators: generating 'And'"
-     $ generateOper And
-     @?= "&&",
-    testCase "Operators: generating 'Or'"
-     $ generateOper Or
-     @?= "||",
--- Generate Expression
-    testCase "Expressions: generate constants"
-     $ generateExp (Const TrueVal)
-     @?= "true",
-    testCase "Expressions: generate variables"
-     $ generateExp (Var "a")
-     @?= "a",
-    testCase "Expressions: generate channels"
-     $ generateExp (Chan "a")
-     @?= "a",
-    testCase "Expressions: generate operations"
-     $ generateExp (Oper Plus (Var "a") (Const (IntVal 2)))
-     @?= "a + 2",
-    testCase "Expressions: generate function calls"
-     $ generateExp (Call "multiply" [Const (IntVal 4),Const (IntVal 3)])
-     @?= "multiply(4, 3)",
-    testCase "Expressions: generate negated expressions"
-     $ generateExp (Not (Var "a"))
-     @?= "!a",
-    testCase "Expressions: generate arrays"
-     $ generateExp (Array [Const (IntVal 1), Const (IntVal 2), Const (IntVal 3)])
-     @?= "[...]int{1, 2, 3}",
-    testCase "Expressions: generate array slices"
-     $ generateExp (Slice "nums" [Const (IntVal 1)])
-     @?= "nums[1]",
-    testCase "Expressions: generate conversion"
-     $ generateExp (Conv INT (Var "a"))
-     @?= "int(a)",
--- Generate FArgs
-    testCase "FArgs: generate zero arguments"
-     $ generateArgs []
-     @?= "",
-    testCase "FArgs: generate one argument"
-     $ generateArgs [Arg [Var "b"] (SVar BYTE)]
-     @?= "b byte",
-    testCase "FArgs: generate list of arguments"
-     $ generateArgs [Arg [Var "c1",Var "c2"] (SChan INT),Arg [Var "b"] (SVar BOOL)]
-     @?= "c1, c2 chan int, b bool",
--- Generate Specs
-    testCase "Specs: generate variable"
-     $ generateSpec (SVar INT)
-     @?= "int",
-    testCase "Specs: generate channel"
-     $ generateSpec (SChan BYTE)
-     @?= "chan byte",
-    testCase "Specs: generate list of one spec"
-     $ generateSpecs [SVar BOOL]
-     @?= "bool",
-    testCase "Specs: generate list of specs"
-     $ generateSpecs [SVar BOOL, SChan INT, SChan BYTE]
-     @?= "bool, chan int, chan byte",
-    testCase "Specs: generate empty list of specs"
-     $ generateSpecx []
-     @?= " ",
--- Generate Statements
----- Assignments 
-    testCase "Statements: assignment of one variable"
-     $ generateStmt (SDef [Var "a"] [Const (IntVal 1)]) ""
-     @?= "a = 1",
-    testCase "Statements: assignment of multiple variables"
-     $ generateStmt (SDef [Var "a", Var "b", Var "c"] [Const (IntVal 1),Const (IntVal 2),Var "v"]) ""
-     @?= "a, b, c = 1, 2, v",
-    testCase "Statements: assignment to array indices"
-     $ generateStmt (SDef [Slice "a" [Const (IntVal 0)]] [Const (IntVal 5)]) ""
-     @?= "a[0] = 5",
-    testCase "Statements: assignment of entire array"
-     $ generateStmt (SDef [Var "a"] [Array [Const (IntVal 1),Const (IntVal 2),Const (IntVal 3)]]) ""
-     @?= "a = [...]int{1, 2, 3}",
----- Declarations
-    testCase "Statements: declaration of one variable"
-     $ generateStmt (SDecl [Var "a"] (SVar BOOL) SContinue) ""
-     @?= "var a bool\n",
-    testCase "Statements: declaration of multiple variables"
-     $ generateStmt (SDecl [Var "a", Var "b", Var "c"] (SVar BOOL) SContinue) ""
-     @?= "var a, b, c bool\n",
-    testCase "Statements: declaration of array"
-     $ generateStmt (SDecl [Var "a", Var "b", Var "c"] (SVar BOOL) SContinue) ""
-     @?= "var a, b, c bool\n",
-    testCase "Statements: declaration of channel"
-     $ generateStmt (SDecl [Var "c"] (SChan INT) SContinue) ""
-     @?= "var c = make(chan int)\n",
----- Sequences
-    testCase "Statements: sequence containing one statement"
-     $ generateStmt (SSeq  [SDef [Var "a"] [Var "b"]]) ""
-     @?= "a = b",
-    testCase "Statements: sequence containing multiple statements"
-     $ generateStmt (SSeq  [SDef [Var "a"] [Var "b"], SExit]) ""
-     @?= "a = b\nos.Exit(1)",
-    testCase "Statements: sequence containing no statements"
-     $ generateStmt (SSeq  []) ""
-     @?= "",
----- If-statements
-    testCase "Statements: if-statements containing one case"
-     $ generateStmt (SIf [IfCase (Oper Less (Var "a") (Const (IntVal 5))) (SSend (Chan "c") (Var "a"))]) ""
-     @?= "if a < 5 {\n  c <- a\n} else { os.Exit(1) }",
-    testCase "Statements: if-statements containing multiple cases"
-     $ generateStmt (SIf 
-         [IfCase (Oper Less (Var "a") (Const (IntVal 5))) (SSend (Chan "c") (Var "a")),
-          IfCase (Oper Geq (Var "a") (Const (IntVal 5))) (SSend (Chan "c") (Const (IntVal 0)))]) ""
-     @?= "if a < 5 {\n  c <- a\n} else if a >= 5 {\n  c <- 0\n} else { os.Exit(1) }",
----- Switch
-    testCase "Statements: switch-statements containing one case"
-     $ generateStmt (SSwitch (Var "a") [SwitchCase [Const (IntVal 5)] (SSend (Chan "c") (Var "a"))]) ""
-     @?= "switch a {\ncase 5 :\n  c <- a\n}",
-    testCase "Statements: switch-statements containing multiple cases"
-     $ generateStmt (SSwitch (Var "a") [SwitchCase [Const (IntVal 5)] (SSend (Chan "c") (Var "a")),
-                                        SwitchCase [Var "b"] (SDef [Var "a"] [Const (IntVal 0)])]) ""
-     @?= "switch a {\ncase 5 :\n  c <- a\ncase b :\n  a = 0\n}",
-    testCase "Statements: switch-statements with case containing multiple expressions"
-     $ generateStmt (SSwitch (Var "a") [SwitchCase [Var "b",Var "c",Const (IntVal 10)] (SSend (Chan "c") (Var "a"))]) ""
-     @?= "switch a {\ncase b, c, 10 :\n  c <- a\n}",
----- Goroutines
-    testCase "Statements: goroutines containing only one process"
-     $ generateStmt (SGo [SSend (Chan "c") (Var "a")]) ""
-     @?= "var waitGroup sync.WaitGroup\nwaitGroup.Add(1)\ngo func() {\n  defer waitGroup.Done()\n  c <- a\n}()\n\nwaitGroup.Wait()",
-    testCase "Statements: goroutines containing multiple processes"
-     $ generateStmt (SGo [SSend (Chan "c1") (Var "a"), SReceive (Var "v") (Chan "c2")]) ""
-     @?= "var waitGroup sync.WaitGroup\nwaitGroup.Add(1)\ngo func() {\n  defer waitGroup.Done()\n  c1 <- a\n}()\n\nwaitGroup.Add(1)\ngo func() {\n  defer waitGroup.Done()\n  v = <-c2\n}()\n\nwaitGroup.Wait()",
----- Select
-    testCase "Statements: select-statements containing one case"
-     $ generateStmt (SSelect [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c")) (SSend (Chan "c") (Const (IntVal 42))))]) ""
-     @?= "select {\ncase a = <-func() chan byte {if true {return c} else {return nil}}() :\n  c <- 42\n}",
-    testCase "Statements: select-statements containing multiple cases"
-     $ generateStmt (SSelect [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c1")) (SSend (Chan "c2") (Const (IntVal 42)))),
-                              SCase (SelectCase (Const TrueVal, SReceive (Var "b") (Chan "c2")) (SSend (Chan "c1") (Var "b")))]) ""
-     @?= "select {\ncase a = <-func() chan byte {if true {return c1} else {return nil}}() :\n  c2 <- 42\ncase b = <-func() chan byte {if true {return c2} else {return nil}}() :\n  c1 <- b\n}",
-    testCase "Statements: select-statements where guard contains both boolean and input"
-     $ generateStmt (SSelect [SCase (SelectCase (Oper Geq (Var "a") (Const (IntVal 13)), 
-                                                 SReceive (Var "a") (Chan "c")) 
-                                                (SSend (Chan "c") (Const (IntVal 42))))]) ""
-     @?= "select {\ncase a = <-func() chan byte {if a >= 13 {return c} else {return nil}}() :\n  c <- 42\n}",
----- While-loops
-    testCase "Statements: while-loop"
-     $ generateStmt (SWhile (Oper Neq (Var "a") (Const (IntVal 0))) (SSend (Chan "c") (Var "a"))) ""
-     @?= "for a != 0 {\n  c <- a\n}",
----- For-loops
-    testCase "Statements: for-loops where count = 0"
-     $ generateStmt (SFor (Var "a") (Const (IntVal 0)) (Const (IntVal 0)) (SSend (Chan "c") (Var "a"))) ""
-     @?= "",
-    testCase "Statements: for-loops where count > 0"
-     $ generateStmt (SFor (Var "a") (Const (IntVal 0)) (Const (IntVal 4)) (SSend (Chan "c") (Var "a"))) ""
-     @?= "for a := 0; a < 4; a++ {\n  c <- a\n}",
----- Calls
-    testCase "Statements: calls with zero arguments"
-     $ generateStmt (SCall (Call "dummy" [])) ""
-     @?= "dummy()",
-    testCase "Statements: calls with one argument"
-     $ generateStmt (SCall (Call "fib" [Const (IntVal 5)])) ""
-     @?= "fib(5)",
-    testCase "Statements: calls with multiple arguments"
-     $ generateStmt (SCall (Call "multiply" [Const (IntVal 5),Const (IntVal 10)])) ""
-     @?= "multiply(5, 10)",
----- Send
-    testCase "Statements: output statements"
-     $ generateStmt (SSend (Chan "c") (Const (StringVal "Hello World!"))) ""
-     @?= "c <- \"Hello World!\"",
----- Receive
-    testCase "Statements: input statements"
-     $ generateStmt (SReceive (Var "v") (Chan "c")) ""
-     @?= "v = <-c",
----- Continue
-    testCase "Statements: empty statements"
-     $ generateStmt (SContinue) ""
-     @?= "",
----- Exit
-    testCase "Statements: exit statements"
-     $ generateStmt (SExit) ""
-     @?= "os.Exit(1)",
--- Generate Functions
-    testCase "Functions: generating generic function"
-     $ generateFun (FFun "wham" [Arg [Var "bam", Var "pow"] (SVar INT)] [] (SDecl [Var "c"] (SChan INT) (SCall (Call "puff" [Var "bam", Var "pow", Var "c"]))))
-     @?= "func wham(bam, pow int) {\n  var c = make(chan int)\n  puff(bam, pow, c)\n}",
--- Generate Program -- tested by running example programs
-    testCase "Program: generating empty program"
-     $ generateProg []
-     @?= ""
+generatorTests = testGroup "Generator Tests" [monadOperations, valueFun, typeFun, operatorFun, expFun, fargsFun, specFun, stmtTests, program]
+
+
+monadOperations :: TestTree
+monadOperations = testGroup "Monad operation tests"
+  [ testCase "getType: get type of variable in env"
+     $ runGen (getType "x") [("x", BOOL), ("z", DChan BYTE)]
+     @?= (Right BOOL, mempty, mempty),
+    testCase "getType: fails if variable is not in env"
+     $ runGen (getType "x") [("y", BOOL), ("z", DChan BYTE)]
+     @?= (Left (EVar "x"), mempty, mempty),
+    testCase "getType: most resent binding is valid"
+     $ runGen (getType "y") [("y", BOOL), ("y", DChan BYTE)]
+     @?= (Right BOOL, mempty, mempty),
+    testCase "bindVar: variable can be bound in empty env"
+     $ runGen (bindVar "x" (INT) (getType "x")) []
+     @?= (Right INT, mempty, mempty),
+    testCase "bindVar: variable can be bound in non-empty env"
+     $ runGen (bindVar "x" (INT) (getType "x")) [("y", BOOL), ("z", DChan BYTE)]
+     @?= (Right INT, mempty, mempty),
+    testCase "bindVar: newest binding of variable is valid"
+     $ runGen (bindVar "x" (INT) (getType "x")) [("x", BOOL), ("z", DChan BYTE)]
+     @?= (Right INT, mempty, mempty),
+    testCase "write: writing program data"
+     $ runGen (write "test") []
+     @?= (Right (), ["test"], mempty),
+    testCase "write: data is concatenated"
+     $ runGen (do write "Hello"; write " World!"; return ()) []
+     @?= (Right (), ["Hello", " World!"], mempty),
+    testCase "addImport: imports can be added"
+     $ runGen (addImport "import \"fmt\"") []
+     @?= (Right (), [], ["import \"fmt\""])
   ]
 
+valueFun :: TestTree
+valueFun = testGroup "Names and values"
+  [ testCase "name: generate name"
+     $ runGen (genName "foo") []
+     @?= (Right "foo", [], []),
+    testCase "name: dots are replaced with underscores"
+     $ runGen (genName "foo.bar") []
+     @?= (Right "foo_bar", [], []),
+    testCase "value: generating TrueVal"
+     $ runGen (genVal TrueVal) []
+     @?= (Right "true", [], []),
+    testCase "value: generating FalseVal"
+     $ runGen (genVal FalseVal) []
+     @?= (Right "false", [], []),
+    testCase "value: generating NoneVal"
+     $ runGen (genVal NoneVal) []
+     @?= (Right "nil", [], []),
+    testCase "value: generating IntVal"
+     $ runGen (genVal (IntVal 5)) []
+     @?= (Right "5", [], []),
+    testCase "value: generating HexVal"
+     $ runGen (genVal (HexVal "1D")) []
+     @?= (Right "1D", [], []),
+    testCase "value: generating ByteVal integer"
+     $ runGen (genVal (ByteVal (IntVal 95))) []
+     @?= (Right "95", [], []),
+    testCase "value: generating ByteVal character"
+     $ runGen (genVal (ByteVal (CharVal 'a'))) []
+     @?= (Right "\'a\'", [], []),
+    testCase "value: generating StringVal"
+     $ runGen (genVal (StringVal "hello world!")) []
+     @?= (Right "\"hello world!\"", [], [])
+  ]
 
+typeFun :: TestTree
+typeFun = testGroup "Data types"
+  [ testCase "DTypes: generating INTs"
+     $ runGen (genDType INT) []
+     @?= (Right "int", [], []),
+    testCase "DTypes: generating BOOLs"
+     $ runGen (genDType BOOL) []
+     @?= (Right "bool", [], []),
+    testCase "DTypes: generating BYTEs"
+     $ runGen (genDType BYTE) []
+     @?= (Right "byte", [], []),
+    testCase "DTypes: generating one dimensional array"
+     $ runGen (genDType (DArray [Const (IntVal 5)] INT)) []
+     @?= (Right "[5]int", [], []),
+    testCase "DTypes: generating multi dimensional array"
+     $ runGen (genDType (DArray [Const (IntVal 5),Const (IntVal 4),Const (IntVal 2)] BOOL)) []
+     @?= (Right "[5][4][2]bool", [], []),
+    testCase "DTypes: generating channels"
+     $ runGen (genDType (DChan BYTE)) []
+     @?= (Right "chan byte", [], [])
+  ]
 
+operatorFun :: TestTree
+operatorFun = testGroup "Operators"
+  [ testCase "Operators: generating '+'"
+     $ runGen (genOper Plus) []
+     @?= (Right "+", [], []),
+    testCase "Operators: generating '-'"
+     $ runGen (genOper Minus) []
+     @?= (Right "-", [], []),
+    testCase "Operators: generating '*'"
+     $ runGen (genOper Times) []
+     @?= (Right "*", [], []),
+    testCase "Operators: generating '/'"
+     $ runGen (genOper Div) []
+     @?= (Right "/", [], []),
+    testCase "Operators: generating '\\'"
+     $ runGen (genOper Mod) []
+     @?= (Right "\\", [], []),
+    testCase "Operators: generating 'Eq'"
+     $ runGen (genOper Eq) []
+     @?= (Right "==", [], []),
+    testCase "Operators: generating 'Neq'"
+     $ runGen (genOper Neq) []
+     @?= (Right "!=", [], []),
+    testCase "Operators: generating 'Less'"
+     $ runGen (genOper Less) []
+     @?= (Right "<", [], []),
+    testCase "Operators: generating 'Greater'"
+     $ runGen (genOper Greater) []
+     @?= (Right ">", [], []),
+    testCase "Operators: generating 'Geq'"
+     $ runGen (genOper Geq) []
+     @?= (Right ">=", [], []),
+    testCase "Operators: generating 'Leq'"
+     $ runGen (genOper Leq) []
+     @?= (Right "<=", [], []),
+    testCase "Operators: generating 'And'"
+     $ runGen (genOper And) []
+     @?= (Right "&&", [], []),
+    testCase "Operators: generating 'Or'"
+     $ runGen (genOper Or) []
+     @?= (Right "||", [], [])
+  ]
 
+expFun :: TestTree
+expFun = testGroup "Expressions"
+  [ testCase "Expressions: generate constants"
+     $ runGen (genExp (Const TrueVal)) []
+     @?= (Right "true", [], []),
+    testCase "Expressions: generate variables"
+     $ runGen (genExp (Var "a")) []
+     @?= (Right "a", [], []),
+    testCase "Expressions: generate channels"
+     $ runGen (genExp (Chan "a")) []
+     @?= (Right "a", [], []),
+    testCase "Expressions: generate operations"
+     $ runGen (genExp (Oper Plus (Var "a") (Const (IntVal 2)))) []
+     @?= (Right "a + 2", [], []),
+    testCase "Expressions: generate function calls"
+     $ runGen (genExp (Call "multiply" [Const (IntVal 4),Const (IntVal 3)])) []
+     @?= (Right "multiply(4, 3)", [], []),
+    testCase "Expressions: generate negated expressions"
+     $ runGen (genExp (Not (Var "a"))) []
+     @?= (Right "!a", [], []),
+    testCase "Expressions: generate arrays"
+     $ runGen (genExp (Array [Const (IntVal 1), Const (IntVal 2), Const (IntVal 3)])) []
+     @?= (Right "{1, 2, 3}", [], []),
+    testCase "Expressions: generate arrays of arrays"
+     $ runGen (genExp (Array [Array [Const (IntVal 1), Const (IntVal 2), Const (IntVal 3)],
+                              Array [Const (IntVal 42), Const (IntVal 1337)]])) []
+     @?= (Right "{{1, 2, 3}, {42, 1337}}", [], []),
+    testCase "Expressions: generate array slices"
+     $ runGen (genExp (Slice "nums" [Const (IntVal 1)])) []
+     @?= (Right "nums[1]", [], []),
+    testCase "Expressions: generate conversion"
+     $ runGen (genExp (Conv INT (Var "a"))) []
+     @?= (Right "int(a)", [], [])
+  ]
 
+fargsFun :: TestTree
+fargsFun = testGroup "FArgs"
+  [ testCase "FArgs: generate zero arguments"
+     $ runGen (genArgs []) []
+     @?= (Right "", [], []),
+    testCase "FArgs: generate one argument"
+     $ runGen (genArgs [Arg [Var "b"] (SVar BYTE)]) []
+     @?= (Right "b byte", [], []),
+    testCase "FArgs: generate list of arguments"
+     $ runGen (genArgs [Arg [Var "c1",Var "c2"] (SChan INT),Arg [Var "b"] (SVar BOOL)]) []
+     @?= (Right "c1, c2 chan int, b bool", [], [])
+  ]
 
+specFun :: TestTree
+specFun = testGroup "Specifications"
+  [ testCase "Specs: generate variable"
+     $ runGen (genSpec (SVar INT)) []
+     @?= (Right "int", [], []),
+    testCase "Specs: generate channel"
+     $ runGen (genSpec (SChan BYTE)) []
+     @?= (Right "chan byte", [], []),
+    testCase "Specs: generate list of one spec"
+     $ runGen (genSpecs [SVar BOOL]) []
+     @?= (Right "bool", [], []),
+    testCase "Specs: generate list of specs"
+     $ runGen (genSpecs [SVar BOOL, SChan INT, SChan BYTE]) []
+     @?= (Right "bool, chan int, chan byte", [], []),
+    testCase "Specs: generate empty list of specs"
+     $ runGen (genSpecx []) []
+     @?= (Right " ", [], [])
+  ]
 
+stmtTests :: TestTree
+stmtTests = testGroup "Statements" [assignments, declarations, sequences, conditional, switch, goroutines, select, loops, calls, ioFun, skipstop]
 
+assignments :: TestTree
+assignments = testGroup "Assignments"
+  [ testCase "Assignment of one variable"
+     $ runGen (genStmt (SDef [Var "a"] [Const (IntVal 1)]) "") [("a", INT)]
+     @?= (Right "a = 1\n", [], []),
+    testCase "Assignment of multiple variables"
+     $ runGen (genStmt (SDef [Var "a", Var "b", Var "c"] 
+                             [Const (IntVal 1),Const (IntVal 2),Var "v"]) "") 
+                       [("a", INT), ("b", INT), ("c", INT)]
+     @?= (Right "a = 1\nb = 2\nc = v\n", [], []),
+    testCase "Assignment to array indices"
+     $ runGen (genStmt (SDef [Slice "a" [Const (IntVal 0)]] [Const (IntVal 5)]) "") 
+                       [("a", DArray [Const (IntVal 5)] INT)]
+     @?= (Right "a[0] = 5", [], []),
+    testCase "Assignment of entire array of ints"
+     $ runGen (genStmt (SDef [Var "a"] 
+                             [Array [Const (IntVal 1),Const (IntVal 2),Const (IntVal 3)]]) "") 
+                       [("a", DArray [Const (IntVal 3)] INT)]
+     @?= (Right "a = [3]int{1, 2, 3}\n", [], []),
+    testCase "Assignment of entire array of bools"
+     $ runGen (genStmt (SDef [Var "a"] [Array [Const TrueVal,Const TrueVal,Const FalseVal]]) "") 
+                       [("a", DArray [Const (IntVal 3)] BOOL)]
+     @?= (Right "a = [3]bool{true, true, false}\n", [], []),
+    testCase "Assignment of entire array of bytes"
+     $ runGen (genStmt (SDef [Var "a"] [Array [Const (ByteVal (CharVal 'a')),
+                                               Const (ByteVal (CharVal 'b'))]]) "")
+                       [("a", DArray [Const (IntVal 2)] BYTE)]
+     @?= (Right "a = [2]byte{'a', 'b'}\n", [], []),
+    testCase "Assignment of entire array of channels"
+     $ runGen (genStmt (SDef [Var "a"] [Array [Chan "c1", Chan "c2", Chan "c3"]]) "") 
+                       [("a", DArray [Const (IntVal 3)] (DChan BYTE))]
+     @?= (Right "a = [3]chan byte{c1, c2, c3}\n", [], []),
+    testCase "Assignment of entire array of arrays"
+     $ runGen (genStmt (SDef [Var "a"] [Array [Array [Const (IntVal 1),Const (IntVal 2)],
+                                               Array [Const (IntVal 3),Const (IntVal 4)]]]) "") 
+                       [("a", DArray [Const (IntVal 2)] (DArray [Const (IntVal 2)] INT))]
+     @?= (Right "a = [2][2]int{{1, 2}, {3, 4}}\n", [], [])
+  ]
 
+declarations :: TestTree
+declarations = testGroup "Declarations"
+  [ testCase "Statements: declaration of one variable"
+     $ runGen (genStmt (SDecl [Var "a"] (SVar BOOL) SContinue) "") []
+     @?= (Right "var a bool\n", [], []),
+    testCase "Statements: declaration of multiple variables"
+     $ runGen (genStmt (SDecl [Var "a", Var "b", Var "c"] (SVar BOOL) SContinue) "") []
+     @?= (Right "var a bool\nvar b bool\nvar c bool\n", [], []),
+    testCase "Statements: declaration of array"
+     $ runGen (genStmt (SDecl [Var "a"] (SVar (DArray [Const (IntVal 5)] INT)) SContinue) "") []
+     @?= (Right "var a [5]int\n", [], []),
+    testCase "Statements: declaration of channel"
+     $ runGen (genStmt (SDecl [Var "c"] (SChan INT) SContinue) "") []
+     @?= (Right "var c = make(chan int)\n", [], [])
+  ]
 
+sequences :: TestTree
+sequences = testGroup "Sequences"
+  [ testCase "Sequence containing one statement"
+     $ runGen (genStmt (SSeq  [SDef [Var "a"] [Var "b"]]) "") [("a", INT)]
+     @?= (Right "a = b\n", [], []),
+    testCase "Sequence containing multiple statements"
+     $ runGen (genStmt (SSeq  [SDef [Var "a"] [Var "b"], SExit]) "") [("a", INT)]
+     @?= (Right "a = b\n\nos.Exit(1)", [], ["import \"os\"\n"]),
+    testCase "Sequence containing no statements"
+     $ runGen (genStmt (SSeq  []) "") []
+     @?= (Right "", [], [])
+  ]
 
+conditional :: TestTree
+conditional = testGroup "Conditionals"
+  [ testCase "If-statements containing one case"
+     $ runGen (genStmt (SIf [IfCase (Oper Less (Var "a") (Const (IntVal 5))) 
+                                    (SSend (Chan "c") (Var "a"))]) "") []
+     @?= (Right "if a < 5 {\n  c <- a\n} else { os.Exit(1) }", [], ["import \"os\"\n"]),
+    testCase "If-statements containing multiple cases"
+     $ runGen (genStmt (SIf 
+         [IfCase (Oper Less (Var "a") (Const (IntVal 5))) (SSend (Chan "c") (Var "a")),
+          IfCase (Oper Geq (Var "a") (Const (IntVal 5))) (SSend (Chan "c") (Const (IntVal 0)))]) "")
+         []
+     @?= (Right "if a < 5 {\n  c <- a\n} else if a >= 5 {\n  c <- 0\n} else { os.Exit(1) }", [], ["import \"os\"\n"])
+  ]
 
+switch :: TestTree
+switch = testGroup "Switch-statements"
+  [ testCase "Switch-statements containing one case"
+     $ runGen (genStmt (SSwitch (Var "a") 
+                        [SwitchCase [Const (IntVal 5)] (SSend (Chan "c") (Var "a"))]) "") []
+     @?= (Right "switch a {\ncase 5 :\n  c <- a\n}", [], []),
+    testCase "Switch-statements containing multiple cases"
+     $ runGen (genStmt (SSwitch (Var "a") 
+                        [SwitchCase [Const (IntVal 5)] (SSend (Chan "c") (Var "a")),
+                         SwitchCase [Var "b"] (SDef [Var "a"] [Const (IntVal 0)])]) "") [("a", INT)]
+     @?= (Right "switch a {\ncase 5 :\n  c <- a\ncase b :\n  a = 0\n\n}", [], []),
+    testCase "Switch-statements with case containing multiple expressions"
+     $ runGen (genStmt (SSwitch (Var "a") [SwitchCase [Var "b",Var "c",Const (IntVal 10)] 
+                                                       (SSend (Chan "c") (Var "a"))]) "") []
+     @?= (Right "switch a {\ncase b, c, 10 :\n  c <- a\n}", [], [])
+  ]
 
+goroutines :: TestTree
+goroutines = testGroup "Goroutines"
+  [ testCase "Goroutines containing only one process"
+     $ runGen (genStmt (SGo [SSend (Chan "c") (Var "a")]) "") []
+     @?= (Right (unlines ["var wg sync.WaitGroup",
+                          "",
+                          "wg.Add(1)",
+                          "go func() {",
+                          "  defer wg.Done()",
+                          "  c <- a",
+                          "}()",
+                          "",
+                          "wg.Wait()"]), [], ["import \"sync\"\n"]),
+    testCase "Goroutines containing multiple processes"
+     $ runGen (genStmt (SGo [SSend (Chan "c1") (Var "a"), SReceive (Var "v") (Chan "c2")]) "") []
+     @?= (Right (unlines ["var wg sync.WaitGroup",
+                          "",
+                          "wg.Add(1)",
+                          "go func() {",
+                          "  defer wg.Done()",
+                          "  c1 <- a",
+                          "}()", 
+                          "",
+                          "wg.Add(1)", 
+                          "go func() {",
+                          "  defer wg.Done()",
+                          "  v = <-c2",
+                          "}()",
+                          "",
+                          "wg.Wait()"]), [], ["import \"sync\"\n"])
+--    testCase "Goroutines, mutiples parallels in same sequence"
+--     $ runGen (genStmt (SSeq [SGo [SSend (Chan "c") (Var "a")],
+--                              SGo [SSend (Chan "c") (Var "b")]]) "") []
+--     @?= (Right (unlines ["var wg sync.WaitGroup",
+--                          "",
+--                          "wg.Add(1)",
+--                          "go func() {",
+--                          "  defer wg.Done()",
+--                          "  c <- a",
+--                          "}()",
+--                          "",
+--                          "wg.Wait()"]), [], ["import \"sync\"\n"])
+  ]
 
+select :: TestTree
+select = testGroup "Select-statements"
+  [ testCase "Select-statements containing one case"
+     $ runGen (genStmt (SSelect [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c")) 
+                                                   (SSend (Chan "c") (Const (IntVal 42))))]) "") 
+              [("c", DChan INT)]
+     @?= (Right "select {\ncase a = <-func() chan int {if true {return c} else {return nil}}() :\n  c <- 42\n}", [], []),
+    testCase "Select-statements containing multiple cases"
+     $ runGen (genStmt (SSelect [SCase (SelectCase (Const TrueVal, SReceive (Var "a") (Chan "c1")) 
+                                                   (SSend (Chan "c2") (Const (IntVal 42)))),
+                                 SCase (SelectCase (Const TrueVal, SReceive (Var "b") (Chan "c2")) 
+                                                   (SSend (Chan "c1") (Var "b")))]) "")
+              [("c1", DChan INT), ("c2", DChan INT)]
+     @?= (Right "select {\ncase a = <-func() chan int {if true {return c1} else {return nil}}() :\n  c2 <- 42\ncase b = <-func() chan int {if true {return c2} else {return nil}}() :\n  c1 <- b\n}", [], []),
+    testCase "Select-statements where guard contains both boolean and input"
+     $ runGen (genStmt (SSelect [SCase (SelectCase (Oper Geq (Var "a") (Const (IntVal 13)), 
+                                                    SReceive (Var "a") (Chan "c")) 
+                                                   (SSend (Chan "c") (Const (IntVal 42))))]) "") 
+              [("c", DChan INT)]
+     @?= (Right "select {\ncase a = <-func() chan int {if a >= 13 {return c} else {return nil}}() :\n  c <- 42\n}", [], [])
+  ]
 
+loops :: TestTree
+loops = testGroup "Loops"
+  [ testCase "While-loop"
+     $ runGen (genStmt (SWhile (Oper Neq (Var "a") (Const (IntVal 0))) (SSend (Chan "c") (Var "a"))) "") []
+     @?= (Right "for a != 0 {\n  c <- a\n}", [], []),
+    testCase "For-loops where count > 0"
+     $ runGen (genStmt (SFor (Var "a") (Const (IntVal 0)) (Const (IntVal 4)) (SSend (Chan "c") (Var "a"))) "") []
+     @?= (Right "for a := 0; a < 4; a++ {\n  c <- a\n}", [], [])
+  ]
 
+calls :: TestTree
+calls = testGroup "Function calls"
+  [ testCase "Calls with zero arguments"
+     $ runGen (genStmt (SCall (Call "dummy" [])) "") []
+     @?= (Right "dummy()", [], []),
+    testCase "Calls with one argument"
+     $ runGen (genStmt (SCall (Call "fib" [Const (IntVal 5)])) "") []
+     @?= (Right "fib(5)", [], []),
+    testCase "Calls with multiple arguments"
+     $ runGen (genStmt (SCall (Call "multiply" [Const (IntVal 5),Const (IntVal 10)])) "") []
+     @?= (Right "multiply(5, 10)", [], [])
+  ]
+
+ioFun :: TestTree
+ioFun = testGroup "IO functions"
+  [ testCase "Output statements"
+     $ runGen (genStmt (SSend (Chan "c") (Const (StringVal "Hello World!"))) "") []
+     @?= (Right "c <- \"Hello World!\"", [], []),
+    testCase "Input statements"
+     $ runGen (genStmt (SReceive (Var "v") (Chan "c")) "") []
+     @?= (Right "v = <-c", [], [])
+  ]
+
+skipstop :: TestTree
+skipstop = testGroup "SKIP and STOP"
+  [ testCase "Empty statements"
+     $ runGen (genStmt (SContinue) "") []
+     @?= (Right "", [], []),
+    testCase "Exit statements"
+     $ runGen (genStmt (SExit) "") []
+     @?= (Right "os.Exit(1)", [], ["import \"os\"\n"])
+  ]
+
+program :: TestTree
+program = testGroup "Programs"
+  [ testCase "Functions: generating generic function"
+     $ runGen (genFun (FFun "wham" [Arg [Var "bam", Var "pow"] (SVar INT)] [] (SDecl [Var "c"] (SChan INT) (SCall (Call "puff" [Var "bam", Var "pow", Var "c"]))))) []
+     @?= (Right "func wham(bam, pow int) {\n  var c = make(chan int)\n  puff(bam, pow, c)\n}", [], []),
+    testCase "Program: generating generic function"
+     $ runGen (genProg [FFun "test" [Arg [Var "out"] (SChan BYTE)] [] (SDecl [Var "c"] (SVar INT) (SDef [Var "c"] [Const (IntVal 5)]))]) []
+     @?= (Right (), ["func test(out chan byte) {\n  defer close(out)\n\n  var c int\n  c = 5\n\n}" ++ "\n\n" ++
+                     unlines ["func main() {",
+                              "  out := make(chan byte, 10)\n",
+                              "  go test(out)\n",
+                              "  for i := range out {",
+                              "    fmt.Print(string(i))",
+                              "  }",
+                              "}"]
+                    ], ["import \"fmt\"\n"]),
+    testCase "Program: generating empty program"
+     $ runGen (genProg []) []
+     @?= (Right (), [], []),
+    testCase "Program: generating program importing multiple libraries"
+     $ runGen (genProg [FFun "help" [Arg [Var "out"] (SChan BYTE)] [] (SSeq [SSend (Chan "out") (Const (ByteVal (CharVal 'a'))),
+                                                                             SExit])]) []
+     @?= (Right (), ["func help(out chan byte) {\n  defer close(out)\n\n  out <- 'a'\n  os.Exit(1)\n}" ++ "\n\n" ++
+                     unlines ["func main() {",
+                              "  out := make(chan byte, 10)\n",
+                              "  go help(out)\n",
+                              "  for i := range out {",
+                              "    fmt.Print(string(i))",
+                              "  }",
+                              "}"]
+                    ], ["import \"os\"\n", "import \"fmt\"\n"]),
+    testCase "Program: generating program importing libraries multipe times"
+     $ generate [FFun "help" [Arg [Var "out"] (SChan BYTE)] [] 
+                 (SSeq [SSend (Chan "out") (Const (ByteVal (CharVal 'a'))),
+                        SExit, SExit])]
+     @?= (["import \"os\"\n", "import \"fmt\"\n", "\n",
+           "func help(out chan byte) {\n  defer close(out)\n\n  out <- 'a'\n  os.Exit(1)\n  os.Exit(1)\n}" ++ "\n\n" ++
+                     unlines ["func main() {",
+                              "  out := make(chan byte, 10)\n",
+                              "  go help(out)\n",
+                              "  for i := range out {",
+                              "    fmt.Print(string(i))",
+                              "  }",
+                              "}"]], Nothing)
+  ]
 
