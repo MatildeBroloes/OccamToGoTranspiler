@@ -278,7 +278,9 @@ parseSeq = try (do
                  symbol "SEQ"
                  (index, base, count) <- parseReplicator
                  p <- indented >> parseProcess
-                 return $ SFor index base count $ SSeq [p])
+                 case count of
+                   Const (IntVal 0) -> return SContinue
+                   _ -> return $ SFor index base count $ SSeq [p])
              <|> do
                   p <- withBlock' (symbol "SEQ") parseProcess
                   return $ SSeq p
@@ -288,10 +290,14 @@ parseIf = try (do
                 symbol "IF"
                 (index, base, count) <- parseReplicator
                 p <- indented >> parseBool
-                return $ SFor index base count $ SIf [p])
+                case count of
+                  Const (IntVal 0) -> return SContinue
+                  _ -> return $ SFor index base count $ SIf [p])
             <|> do
                  p <- withBlock' (symbol "IF") parseBool
-                 return $ SIf p
+                 if null p -- changed so that if-processes with no choices behave as STOP
+                    then return $ SExit
+                 else return $ SIf p
 
 parseBool :: IParser Case
 parseBool = do
@@ -326,7 +332,9 @@ parsePar = try (do
                  symbol "PAR"
                  (index, base, count) <- parseReplicator
                  p <- indented >> (try parseProcess <|> parseCall)
-                 return $ SFor index base count $ SGo [p])
+                 case count of
+                   Const (IntVal 0) -> return SContinue
+                   _ -> return $ SFor index base count $ SGo [p])
              <|> do
                   p <- withBlock' (symbol "PAR") (try parseProcess <|> parseCall)
                   return $ SGo p
@@ -344,7 +352,9 @@ parseAlt = try (do
                  a <- case p of
                         SSelect [] -> return $ SExit
                         _ -> return $ p
-                 return $ SFor index base count $ SSelect [a])
+                 case count of
+                   Const (IntVal 0) -> return SContinue
+                   _ -> return $ SFor index base count $ SSelect [a])
              <|> (do
                    p <- withBlock' (symbol "ALT") parseAlternative
                    case p of

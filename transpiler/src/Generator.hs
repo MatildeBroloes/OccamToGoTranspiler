@@ -2,297 +2,389 @@
 module Generator where
 
 import GoAST
-import Test.RandomStrings
+--import Test.RandomStrings
 import System.IO
+import Control.Monad
+
+type Env = [(VName, DType)]
+
+type ProgData = [String]
+type ImportData = [String]
+
+data GenError = EVar VName | EOther String
+  deriving (Eq, Show)
+
+newtype Gen a = Gen {runGen :: Env -> (Either GenError a, ProgData, ImportData)}
+
+instance Monad Gen where
+  return a = Gen (\_ -> (Right a, mempty, mempty))
+  m >>= f = Gen (\e -> case runGen m e of
+                         (Left err, p0, i0) -> (Left err, p0, i0)
+                         (Right a0, p0, i0) -> case runGen (f a0) e of
+                                                 (Left err, p1, i1) -> (Left err, p0<>p1, i0<>i1)
+                                                 (Right a1, p1, i1) -> (Right a1, p0<>p1, i0<>i1))
+
+instance Functor Gen where
+  fmap = liftM
+instance Applicative Gen where
+  pure = return; (<*>) = ap
+
+-- Monad functions
+abort :: GenError -> Gen a
+abort err = Gen (\_ -> (Left err, mempty, mempty))
+
+bindVar :: VName -> DType -> Gen a -> Gen a
+bindVar v d m = Gen (\e0 -> let e1 = (v,d):e0
+                             in runGen m e1)
+
+getType :: VName -> Gen DType
+getType x = Gen (\e -> let lst = filter (\(v, _) -> v == x) e
+                        in if null lst
+                              then (Left (EVar x), mempty, mempty)
+                           else (Right (snd $ head lst), mempty, mempty))
+
+write :: String -> Gen ()
+write s = Gen (\_ -> (Right (), [s], mempty))
+
+addImport :: String -> Gen ()
+addImport s = Gen (\_ -> (Right (), mempty, [s]))
+
+-- Generator functions
 
 -- Generator for names -- should ensure that dots are replaced with underscores
-generateName :: String -> String
-generateName [] = ""
-generateName (c:cs) | c == '.' = "_" ++ (generateName cs)
-generateName (c:cs) = [c] ++ (generateName cs)
+genName :: String -> Gen String
+genName [] = return ""
+genName (c:cs) | c == '.' = do
+                             name <- genName cs
+                             return $ "_" ++ name
+genName (c:cs) = do
+                  name <- genName cs
+                  return $ [c] ++ name
 
 -- Generator for Values
-generateVal :: Val -> String
-generateVal TrueVal = "true"
-generateVal FalseVal = "false"
-generateVal NoneVal = "nil"
-generateVal (IntVal i) = show i
-generateVal (HexVal h) = h
-generateVal (ByteVal (CharVal b)) = "\'" ++ [b] ++ "\'"
-generateVal (ByteVal (IntVal b)) = show b
-generateVal (StringVal s) = "\"" ++ s ++ "\""
+genVal :: Val -> Gen String
+genVal TrueVal = return "true"
+genVal FalseVal = return "false"
+genVal NoneVal = return "nil"
+genVal (IntVal i) = return $ show i
+genVal (HexVal h) = return h
+genVal (ByteVal (CharVal b)) = return $ "\'" ++ [b] ++ "\'"
+genVal (ByteVal (IntVal b)) = return $ show b
+genVal (StringVal s) = return $ "\"" ++ s ++ "\""
+
 
 -- Generator for Types
-generateDType :: DType -> String
-generateDType INT = "int"
-generateDType BOOL = "bool"
-generateDType BYTE = "byte"
-generateDType (DArray exps d) =
-  let t = generateDType d
-   in (generateArrayType exps) ++ t
+genDType :: DType -> Gen String
+genDType INT = return "int"
+genDType BOOL = return "bool"
+genDType BYTE = return "byte"
+genDType (DArray exps d) =
+  do
+   a <- genArrayType exps
+   t <- genDType d
+   return $ a ++ t
+genDType (DChan d) = do t <- genDType d; return $ "chan " ++ t
 
-generateArrayType :: [Exp] -> String
-generateArrayType [e] = let v = generateExp e
-                         in "[" ++ v ++ "]"
-generateArrayType (e:es) = let v = generateExp e
-                               vs = generateArrayType es
-                            in "[" ++ v ++ "]" ++ vs
-generateArrayType _ = "error"
+-- Helper function for generating array types
+genArrayType :: [Exp] -> Gen String
+genArrayType [e] =  do
+                     v <- genExp e
+                     return $ "[" ++ v ++ "]"
+genArrayType (e:es) = do
+                       v <- genExp e
+                       vs <- genArrayType es
+                       return $ "[" ++ v ++ "]" ++ vs
+--genArrayType _ = abort (EOther "Empty array")
 
 
 -- Generator for Operators
-generateOper :: Op -> String
-generateOper Plus = "+"
-generateOper Minus = "-"
-generateOper Times = "*"
-generateOper Div = "/"
-generateOper Mod = "\\"
-generateOper Eq = "=="
-generateOper Neq = "!="
-generateOper Less = "<"
-generateOper Greater = ">"
-generateOper Geq = ">="
-generateOper Leq = "<="
-generateOper And = "&&"
-generateOper Or = "||"
+genOper :: Op -> Gen String
+genOper Plus = return "+"
+genOper Minus = return "-"
+genOper Times = return "*"
+genOper Div = return "/"
+genOper Mod = return "\\"
+genOper Eq = return "=="
+genOper Neq = return "!="
+genOper Less = return "<"
+genOper Greater = return ">"
+genOper Geq = return ">="
+genOper Leq = return "<="
+genOper And = return "&&"
+genOper Or = return "||"
 
 -- Generator for Expresions
-generateExp :: Exp -> String
-generateExp (Const v) = generateVal v
-generateExp (Var v) = generateName v
-generateExp (Chan c) = generateName c
-generateExp (Oper o e1 e2) = let op = generateOper o
-                                 ex1 = generateExp e1
-                                 ex2 = generateExp e2
-                              in ex1 ++ " " ++ op ++ " " ++ ex2
-generateExp (Not e) = "!" ++ (generateExp e)
-generateExp (Call name args) = (generateName name) ++ "(" ++ (generateExps args) ++ ")"
-generateExp (Array es) = 
-  let exps = generateExps es
-      t = "int" -- deficiency: this should be changed to infer the type of the array
-   in concat ["[...]", t, "{", exps, "}"]
-generateExp (Slice s exps) = let v = generateName s
-                                 indexes = generateSlice exps
-                              in v ++ indexes
-generateExp (Conv d e) = let t = generateDType d
-                             ex = generateExp e
-                          in t ++ "(" ++ ex ++ ")"
+genExp :: Exp -> Gen String
+genExp (Const v) = genVal v
+genExp (Var v) = genName v
+genExp (Chan c) = genName c
+genExp (Oper o e1 e2) = do op <- genOper o
+                           ex1 <- genExp e1
+                           ex2 <- genExp e2
+                           return $ ex1 ++ " " ++ op ++ " " ++ ex2
+genExp (Not e) = do ex <- genExp e; return $ "!" ++ ex
+genExp (Call name args) = 
+  do n <- genName name; as <- genExps args; return $ n ++ "(" ++ as ++ ")"
+genExp (Array es) = do exs <- genExps es; return $ "{" ++ exs ++ "}"
+genExp (Slice s exps) = do v <- genName s; is <- genSlice exps; return $ v ++ is
+genExp (Conv d e) = do 
+                     t <- genDType d
+                     ex <- genExp e
+                     return $ t ++ "(" ++ ex ++ ")"
 
-generateExps :: [Exp] -> String
-generateExps [] = ""
-generateExps [e] = generateExp e
-generateExps (e:es) = let ex = generateExp e
-                          exs = generateExps es
-                       in ex ++ ", " ++ exs
+genExps :: [Exp] -> Gen String
+genExps [] = return ""
+genExps [e] = genExp e
+genExps (e:es) = do x <- genExp e; xs <- genExps es; return $ x ++ ", " ++ xs
 
 -- Helper function for generating slices
-generateSlice :: [Exp] -> String
-generateSlice [e] = let i = generateExp e
-                     in "[" ++ i ++ "]"
-generateSlice (e:es) = let i = generateExp e
-                           is = generateSlice es
-                        in i ++ is
+genSlice :: [Exp] -> Gen String
+genSlice [e] = do i <- genExp e; return $ "[" ++ i ++ "]"
+genSlice (e:es) = do i <- genExp e; is <- genSlice es; return $ i ++ is
+
+-- Helper function for generating array definitions
+genArray :: Exp -> ([Exp], DType) -> Gen String
+genArray e ([], d) = do
+                      ex <- genExp e
+                      t <- genDType d
+                      return $ t ++ ex
+genArray e ((te:tes), d) = do
+                            x <- genExp te
+                            r <- genArray e (tes, d)
+                            return $ "[" ++ x ++ "]" ++ r
 
 -- Generator for FArgs
-generateArgs :: FArgs -> String
-generateArgs [] = ""
-generateArgs [Arg exps spec] =
-  let es = generateExps exps
-      s = generateSpec spec
-   in es ++ " " ++ s
-generateArgs ((Arg exps spec):args) = 
-  let es = generateExps exps
-      s = generateSpec spec
-      as = generateArgs args
-   in es ++ " " ++ s ++ ", " ++ as
+genArgs :: FArgs -> Gen String
+genArgs [] = return ""
+genArgs [Arg exs sp] = do 
+                        es <- genExps exs
+                        s <- genSpec sp
+                        return $ es ++ " " ++ s
+genArgs ((Arg exs sp):args) = do 
+                               es <- genExps exs
+                               s <- genSpec sp
+                               as <- genArgs args
+                               return $ es ++ " " ++ s ++ ", " ++ as
 
 -- Generator for Specs
-generateSpec :: Spec -> String
-generateSpec (SVar d) = generateDType d
-generateSpec (SChan d) = let t = generateDType d
-                          in "chan " ++ t
+genSpec :: Spec -> Gen String
+genSpec (SVar d) = genDType d
+genSpec (SChan d) = do t <- genDType d; return $ "chan " ++ t
 
-generateSpecs :: [Spec] -> String
-generateSpecs [s] = generateSpec s
-generateSpecs (s:ss) = let sp = generateSpec s
-                           sps = generateSpecs ss
-                        in sp ++ ", " ++ sps
-generateSpecs _ = "error" -- TODO: proper error handling
+genSpecs :: [Spec] -> Gen String
+genSpecs [s] = genSpec s
+genSpecs (e:es) = do s <- genSpec e; ss <- genSpecs es; return $ s ++ ", " ++ ss
+--genSpecs _ = abort (EOther "Implementation faulty")
 
-generateSpecx :: [Spec] -> String
-generateSpecx [] = " "
-generateSpecx ss = " (" ++ (generateSpecs ss) ++ ") "
+genSpecx :: [Spec] -> Gen String
+genSpecx [] = return " "
+genSpecx es = do ss <- genSpecs es; return $ " (" ++ ss ++ ") "
 
--- Generator for cases
-generateCase :: Case -> String -> String
-generateCase (IfCase e s) i = let c = generateExp e
-                                  b = generateStmt s (i ++ "  ")
-                               in "if " ++ c ++ " {\n" ++ b ++ "\n" ++ i ++ "}"
-generateCase (SwitchCase es s) i = let ms = generateExps es
-                                       st = generateStmt s (i ++ "  ")
-                                    in i ++ "case " ++ ms ++ " :\n" ++ st
-generateCase (SelectCase (e,(SReceive to from)) stmt) i =
-  let c = generateExp e
-      var = generateExp to
-      chan = generateExp from
-      body = generateStmt stmt (i ++ "  ")
-   in concat[i, "case ", var, " = <-func() chan byte {if ", c, " {return ", chan, "} else {return nil}}() :\n", body]
-generateCase (SelectCase (_, SContinue) _) i = i ++ "Not implemented: Case type cannot be generated"
-generateCase _ _ = "error" -- TODO: proper error handling
 
-generateCases :: [Case] -> String -> String
-generateCases [c] i = generateCase c i
-generateCases ((IfCase e s):cs) i = let case1 = generateCase (IfCase e s) i
-                                        cases = generateCases cs i
-                                     in case1 ++ " else " ++ cases
-generateCases ((SwitchCase es s):cs) i = 
-  let case1 = generateCase (SwitchCase es s) i
-      cases = generateCases cs i
-   in case1 ++ "\n" ++ cases
-generateCases ((SelectCase (e,s) stmt):cs) i = 
-  let b = generateExp e
-      st = generateStmt stmt (i ++ "  ")
-   in case s of
-        (SReceive e1 e2) ->
-          let v = generateExp e1
-              c = generateExp e2
-           in concat [i, "case ", " = <-func() chan byte {if ", b, " {return ", c, "} else {return nil}}() :\n", i, st]
-        (SContinue) -> "Guards with bool and SKIP not implemented"
-generateCases _ _ = "error"
+-- Helper function for generating if-statements
+genCase :: [Case] -> String -> Gen String
+genCase [] _ = return ""
+genCase ((IfCase e s):cs) i = 
+  do
+   cond <- genExp e
+   body <- genStmt s (i ++ "  ")
+   cases <- genCase cs i
+   return $ concat["if ", cond, " {\n", body, "\n", i, "} else ", cases]
+genCase ((SwitchCase es s):cs) i = 
+  do
+   match <- genExps es
+   stmt <- genStmt s (i ++ "  ")
+   cases <- genCase cs i
+   return $ concat [i, "case ", match, " :\n", stmt, "\n", cases]
+genCase [SelectCase (e, (SReceive to from)) stmt] i =
+  do
+   cond <- genExp e
+   var <- genExp to
+   chan <- genExp from
+   ctype <- (getType chan) >>= genDType
+   body <- genStmt stmt (i ++ "  ")
+   return $ concat [i, "case ", var, " = <-func() ", ctype, " {if ", 
+                    cond, " {return ", chan, "} else {return nil}}() :\n", body]
+genCase [SelectCase (_, SContinue) _] _ = 
+  abort $ EOther "Select case cannot be generated"
+genCase _ _ = abort $ EOther "Case type cannot be generates"
 
--- Helper function for generating select statements
-generateSelect :: [Stmt] -> String -> String
-generateSelect [(SCase c)] i = generateCase c i
-generateSelect ((SCase c):cs) i = let case1 = generateCase c i
-                                      cases = generateSelect cs i
-                                   in case1 ++ "\n" ++ cases
-generateSelect _ _ = "error" -- TODO: proper error handling
 
+-- Helper functions for generating select statements
+genSelect :: [Stmt] -> String -> Gen String
+genSelect [] _ = return ""
+genSelect ((SCase x):xs) i = do
+                              c <- genCase [x] i
+                              cs <- genSelect xs i
+                              return $ c ++ "\n" ++ cs
+
+                              
 -- Helper function for generating wait group functions for parallels
-generateWGFun :: Stmt -> String -> String -> String
-generateWGFun s i wg = let st = generateStmt s (i ++ "  ")
-                        in unlines [i ++ wg ++ ".Add(1)",
-                                    i ++ "go func() {",
-                                    i ++ "  defer " ++ wg ++ ".Done()",
-                                    st,
-                                    i ++ "}()"]
+genWG :: Gen String
+genWG = return "wg"
 
-generateWGFuns :: [Stmt] -> String -> String -> String
-generateWGFuns [] _ _ = ""
-generateWGFuns (s:ss) i wg = let fun = generateWGFun s i wg
-                                 funs = generateWGFuns ss i wg
-                              in fun ++ "\n" ++ funs
+genWGFun :: Stmt -> String -> String -> Gen String
+genWGFun s i wg = do
+                   st <- genStmt s (i ++ "  ")
+                   return $ unlines [i ++ wg ++ ".Add(1)",
+                                     i ++ "go func() {",
+                                     i ++ "  defer " ++ wg ++ ".Done()",
+                                     st,
+                                     i ++ "}()"]
 
-generateChans :: [Exp] -> String -> String -> String
-generateChans [e] t i = let c = generateExp e
-                         in i ++ "var " ++ c ++ " = make(chan " ++ t ++ ")"
-generateChans (e:es) t i = let c = generateExp e
-                               cs = generateChans es t i
-                            in i ++ "var " ++ c ++ " = make(chan " ++ t ++ ")\n" ++ cs
+genWGFuns :: [Stmt] -> String -> String -> Gen String
+genWGFuns [] _ _ = return ""
+genWGFuns (s:ss) i wg = do
+                         fun <- genWGFun s i wg
+                         funs <- genWGFuns ss i wg
+                         return $ fun ++ "\n" ++ funs
+
+
+
 
 -- Generator for Statements
 -- The second input argument is for ensuring correct indentation
-generateStmt :: Stmt -> String -> String
-generateStmt (SDef es1 es2) i = let exs1 = generateExps es1
-                                    exs2 = generateExps es2
-                                 in i ++ exs1 ++ " = " ++ exs2
-generateStmt (SDecl es (SChan d) stmt) i = 
-  let t = generateDType d
-      exs = generateChans es t i
-      st = generateStmt stmt i
-   in exs ++ "\n" ++ st
-generateStmt (SDecl es spec stmt) i = 
-  let exs = generateExps es
-      sp = generateSpec spec
-      st = generateStmt stmt i
-   in i ++ "var " ++ exs ++ " " ++ sp ++ "\n" ++ st
-generateStmt (SSeq [s]) i = generateStmt s i
-generateStmt (SSeq (s:ss)) i = let st = generateStmt s i
-                                   sts = generateStmt (SSeq ss) i
-                                in st ++ "\n" ++ sts
-generateStmt (SSeq []) _ = ""
-generateStmt (SIf cs) i = 
-  let cases = generateCases cs i
-      post = " else { os.Exit(1) }"
-   in i ++ cases ++ post
-generateStmt (SSwitch e cs) i = 
-  let sel = generateExp e
-      opt = generateCases cs i
-   in i ++ "switch " ++ sel ++ " {\n" ++ opt ++ "\n}" 
-generateStmt (SGo ss) i =
-  let wg = "waitGroup" -- The name of the wait group should be generated instead of this
-      pre = i ++ "var " ++ wg ++ " sync.WaitGroup\n"
-      funs = generateWGFuns ss i wg
-      post = i ++ wg ++ ".Wait()"
-   in pre ++ funs ++ post
-generateStmt (SSelect cs) i =
-  let cases = generateSelect cs i
-   in i ++ "select {\n" ++ cases ++ "\n" ++ i ++ "}"
-generateStmt (SWhile e stmt) i = let c = generateExp e
-                                     s = generateStmt stmt (i ++ "  ")
-                                  in i ++ "for " ++ c ++ " {\n" ++ s ++ "\n" ++ i ++ "}"
-generateStmt (SFor e1 e2 e3 stmt) i = 
-  let index = generateExp e1
-      base = generateExp e2
-      count = generateExp e3
-      body = generateStmt stmt (i ++ "  ")
-      lim = show ((read base) + (read count))
-   in case (read count) of
-        0 -> ""
-        _ -> concat [i, "for ", index, " := ", base, "; ", index, " < ", lim,
-                     "; ", index, "++ {\n", body, "\n", i, "}"]
-generateStmt (SCall e) i = i ++ (generateExp e)
-generateStmt (SSend e1 e2) i = i ++ (generateExp e1) ++ " <- " ++ (generateExp e2)
-generateStmt (SReceive e1 e2) i = let v = generateExp e1
-                                      c = generateExp e2
-                                   in case v of
-                                        "nil" -> i ++ "<-" ++ c
-                                        _ -> i ++ v ++ " = <-" ++ c
-generateStmt SContinue _ = ""
-generateStmt SExit i = i ++ "os.Exit(1)"
-generateStmt _ _ = "error" -- TODO: proper error handling
+genStmt :: Stmt -> String -> Gen String
+genStmt (SDef [] []) _ = return ""
+genStmt (SDef ((Var s):vs) (e:es)) i = 
+  do
+   v <- genExp (Var s)
+   t <- getType v
+   defs <- genStmt (SDef vs es) i
+   exp <- case t of
+            DArray exps d -> genArray e (exps, d)
+            _ -> genExp e
+   return $ i ++ v ++ " = " ++ exp ++ "\n" ++ defs
+genStmt (SDef ((Slice name exps):vs) (e:es)) i =
+  do
+   s <- genExp (Slice name exps)
+   t <- getType name
+   exp <- case t of
+            DArray _ (DArray aes d) -> genArray e (aes, d)
+            _ -> genExp e
+   return $ i ++ s ++ " = " ++ exp
+genStmt (SDecl [] d stmt) i = genStmt stmt i
+genStmt (SDecl (e:es) s stmt) i = 
+  do
+   v <- genExp e
+   case s of
+     (SChan d) -> do
+                   t <- genDType d
+                   r <- bindVar v (DChan d) $ genStmt (SDecl es s stmt) i
+                   return $ concat [i, "var ", v, " = make(chan ", t, ")\n", r]
+     (SVar d) -> do
+                  t <- genDType d
+                  r <- bindVar v d $ genStmt (SDecl es s stmt) i
+                  return $ concat [i, "var ", v, " ", t, "\n", r]
+genStmt (SSeq []) _ = return ""
+genStmt (SSeq [s]) i = genStmt s i
+genStmt (SSeq (s:ss)) i = 
+  do p <- genStmt s i; ps <- genStmt (SSeq ss) i; return $ p ++ "\n" ++ ps
+genStmt (SIf xs) i = do
+                      cs <- genCase xs i
+                      _ <- addImport "import \"os\"\n"
+                      return $ i ++ cs ++ "{ os.Exit(1) }"
+genStmt (SSwitch e cs) i = do 
+                            s <- genExp e
+                            o <- genCase cs i
+                            return $ concat [i, "switch ", s, " {\n", o, i, "}"]
+genStmt (SGo s) i = do
+                     wg <- genWG
+                     funs <- genWGFuns s i wg
+                     _ <- addImport "import \"sync\"\n"
+                     return $ unlines [i ++ "var " ++ wg ++ " sync.WaitGroup\n",
+                                       funs ++ i ++ wg ++ ".Wait()"]
+genStmt (SSelect xs) i = do
+                          cs <- genSelect xs i
+                          return $ i ++ "select {\n" ++ cs ++ i ++ "}"
+genStmt (SWhile e stmt) i = 
+  do
+   c <- genExp e
+   s <- genStmt stmt (i ++ "  ")
+   return $ concat [i, "for ", c, " {\n", s, "\n", i, "}"]
+genStmt (SFor e1 e2 e3 stmt) i = 
+  do
+   index <- genExp e1
+   base <- genExp e2
+   count <- genExp e3
+   body <- genStmt stmt (i ++ "  ")
+   lim <- return $ show ((read base) + (read count))
+   return $ concat [i, "for ", index, " := ", base, "; ", index, " < ", lim, 
+                    "; ", index, "++ {\n", body, "\n", i, "}"]
+genStmt (SCall e) i = do f <- genExp e; return $ i ++ f
+genStmt (SSend e1 e2) i = 
+  do c <- genExp e1; m <- genExp e2; return $ i ++ c ++ " <- " ++ m
+genStmt (SReceive e1 e2) i = do 
+                              v <- genExp e1
+                              c <- genExp e2
+                              case v of
+                                "nil" -> return $ i ++ "<-" ++ c
+                                _ -> return $ i ++ v ++ " = <-" ++ c
+genStmt SContinue _ = return ""
+genStmt SExit i = do
+                   _ <- addImport "import \"os\"\n"
+                   return $ i ++ "os.Exit(1)"
+genStmt _ _ = abort $ EOther "Error when generating statement"
+
 
 -- Generator for Function
-generateFun :: Fun -> String
-generateFun (FFun name args specs stmt) =
-  let nm = generateName name
-      as = generateArgs args
-      ss = generateSpecx specs -- not relevant for procedures
-      st = generateStmt stmt "  "
-   in "func " ++ nm ++ "(" ++ as ++ ")" ++ ss ++ "{\n" ++ st ++ "\n}"
+genFun :: Fun -> Gen String
+genFun (FFun name args specs stmt) =
+  do 
+   head <- genHead name args specs
+   st <- genStmt stmt "  "
+   return $ concat [head, "{\n", st, "\n}"]
 
--- Generator for Program
-generateProg :: Program -> String
-generateProg [] = ""
-generateProg [FFun name args [] stmt] = -- only for generating the top-level function
-  let n = generateName name
-      nm = generateName name
-      as = generateArgs args
-      cs = "  defer close(out)"
-      st = generateStmt stmt "  "
-      fun = "func " ++ nm ++ "(" ++ as ++ ") {\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
-      main = 
-        unlines ["func main() {",
-                 "  out := make(chan byte, 10)\n",
-                 "  go " ++ n ++"(out)\n",
-                 "  for i := range out {",
-                 "    fmt.Print(string(i))",
-                 "  }",
-                 "}"]
-   in fun ++ "\n\n" ++ main
-generateProg ((FFun name args specs stmt):fs) = let n = generateName name
-                                                    fun = generateFun (FFun n args specs stmt)
-                                                    funs = generateProg fs
-                                                 in fun ++ "\n" ++ funs
+-- Generator for function headers
+genHead :: FName -> FArgs -> [Spec] -> Gen String
+genHead name args specs = do
+                           n <- genName name
+                           as <- genArgs args
+                           ss <- genSpecx specs
+                           return $ concat ["func ", n, "(", as, ")", ss]
+
+-- Function for generating program
+genProg :: Program -> Gen ()
+genProg [FFun name args specs stmt] =
+  do
+   head <- genHead name args specs
+   cs <- return "  defer close(out)"
+   st <- genStmt stmt "  "
+   fun <- return $ head ++ "{\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
+   _ <- addImport "import \"fmt\"\n"
+   main <- return $ unlines ["func main() {",
+                             "  out := make(chan byte, 10)\n",
+                             "  go " ++ name ++"(out)\n",
+                             "  for i := range out {",
+                             "    fmt.Print(string(i))",
+                             "  }",
+                             "}"]
+   write $ fun ++ "\n\n" ++ main
+genProg (x:xs) = do 
+                  f <- genFun x
+                  write $ f ++ "\n\n"
+                  genProg xs
+genProg [] = return ()
+
+-- Function for extracting result of generating program
+generate :: Program -> ([String], Maybe GenError)
+generate p0 = let (e, p, i) = runGen (genProg p0) [] -- empty starting environment
+                  imports = foldl (\acc x -> if x `elem` acc then acc else acc<>[x]) [] i
+               in case e of
+                    Left err -> ((imports<>["\n"])<>p, Just err)
+                    _ -> ((imports<>["\n"])<>p, Nothing)
+
 
 -- function for writing result to file
-write :: String -> String -> IO ()
-write f s = do
-             file <- openFile f ReadMode
-             p <- hGetContents file
-             let code = generateProg (read p)
-                 pre = "package main\n\nimport \"fmt\"\nimport \"sync\"\nimport \"os\"\n\n"
-              in do
-                  writeFile (s ++ ".go") (pre ++ code)
-             hClose file
+writeGen :: String -> String -> IO ()
+writeGen f s = 
+  do
+   file <- openFile f ReadMode
+   p <- hGetContents file
+   let (code, m) = generate (read p)
+       pre = "package main\n\n"
+    in case m of
+         Just err -> putStrLn "Error: could not generate program"
+         Nothing -> writeFile (s ++ ".go") (pre ++ (concat code))
+   hClose file
 

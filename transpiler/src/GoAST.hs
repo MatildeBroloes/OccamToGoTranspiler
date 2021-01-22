@@ -54,6 +54,7 @@ data Spec =
 
 data DType = BOOL | BYTE | INT
   | DArray [Exp] DType
+  | DChan DType
   deriving (Eq, Show, Read)
 
 type VName = String
