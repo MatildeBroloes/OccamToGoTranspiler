@@ -4,10 +4,13 @@ module Generator where
 import GoAST
 --import Test.RandomStrings
 import System.IO
+--import System.Random
 import Control.Monad
+--import Data.UnixTime
 
-type Env = [(VName, DType)]
+type Env = ([(VName, DType)], CountWG)
 
+type CountWG = Int
 type ProgData = [String]
 type ImportData = [String]
 
@@ -34,20 +37,27 @@ abort :: GenError -> Gen a
 abort err = Gen (\_ -> (Left err, mempty, mempty))
 
 bindVar :: VName -> DType -> Gen a -> Gen a
-bindVar v d m = Gen (\e0 -> let e1 = (v,d):e0
-                             in runGen m e1)
+bindVar v d m = Gen (\(e0, c) -> let e1 = (v,d):e0
+                                  in runGen m (e1, c))
 
 getType :: VName -> Gen DType
-getType x = Gen (\e -> let lst = filter (\(v, _) -> v == x) e
-                        in if null lst
-                              then (Left (EVar x), mempty, mempty)
-                           else (Right (snd $ head lst), mempty, mempty))
+getType x = Gen (\(e, _) -> let lst = filter (\(v, _) -> v == x) e
+                             in if null lst
+                                   then (Left (EVar x), mempty, mempty)
+                                else (Right (snd $ head lst), mempty, mempty))
 
 write :: String -> Gen ()
 write s = Gen (\_ -> (Right (), [s], mempty))
 
 addImport :: String -> Gen ()
 addImport s = Gen (\_ -> (Right (), mempty, [s]))
+
+addWG :: Gen a -> Gen a
+addWG m = Gen (\(e, c0) -> let c1 = c0 + 1
+                            in runGen m (e, c1))
+
+getWG :: Gen Int
+getWG = Gen (\(_, c) -> (Right c, mempty, mempty))
 
 -- Generator functions
 
@@ -221,7 +231,12 @@ genSelect ((SCase x):xs) i = do
                               
 -- Helper function for generating wait group functions for parallels
 genWG :: Gen String
-genWG = return "wg"
+--genWG = return "wg"
+genWG = do
+         num <- getWG
+         return $ "wg_" ++ (show num)
+--genWG = let rand = mkStdGen 42
+--         in return $ "wg_" ++ (take 4 $ randomRs ('0','9') rand)
 
 genWGFun :: Stmt -> String -> String -> Gen String
 genWGFun s i wg = do
@@ -278,6 +293,8 @@ genStmt (SDecl (e:es) s stmt) i =
                   return $ concat [i, "var ", v, " ", t, "\n", r]
 genStmt (SSeq []) _ = return ""
 genStmt (SSeq [s]) i = genStmt s i
+genStmt (SSeq ((SGo s):ss)) i = 
+  do p <- genStmt (SGo s) i; ps <- addWG $ genStmt (SSeq ss) i; return $ p ++ "\n" ++ ps
 genStmt (SSeq (s:ss)) i = 
   do p <- genStmt s i; ps <- genStmt (SSeq ss) i; return $ p ++ "\n" ++ ps
 genStmt (SIf xs) i = do
@@ -368,7 +385,7 @@ genProg [] = return ()
 
 -- Function for extracting result of generating program
 generate :: Program -> ([String], Maybe GenError)
-generate p0 = let (e, p, i) = runGen (genProg p0) [] -- empty starting environment
+generate p0 = let (e, p, i) = runGen (genProg p0) ([], 0) -- empty starting environment
                   imports = foldl (\acc x -> if x `elem` acc then acc else acc<>[x]) [] i
                in case e of
                     Left err -> ((imports<>["\n"])<>p, Just err)

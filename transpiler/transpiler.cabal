@@ -27,7 +27,7 @@ executable transpiler
   build-depends:       base ^>=4.13.0.0,
                        parsec,
                        indents,
-                       random-strings,
+                       unix-time,
                        tasty,
                        tasty-hunit
   hs-source-dirs:      src,
