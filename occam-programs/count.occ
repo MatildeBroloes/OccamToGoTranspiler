@@ -1,4 +1,4 @@
-PROC count(CHAN OF BYTE out)
+PROC count(CHAN OF BYTE in, out, err)
   BYTE c:
   SEQ
     c := 48

@@ -17,7 +17,7 @@ PROC incr(CHAN OF INT in, out)
         out ! r
 :
 
-PROC parallel(CHAN OF BYTE out)
+PROC parallel(CHAN OF BYTE in, out, err)
   INT tmp:
   CHAN OF INT c1, c2, c3:
   SEQ
