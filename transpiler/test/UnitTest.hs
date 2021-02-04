@@ -686,10 +686,19 @@ assignments = testGroup "Assignments"
                              [Const (IntVal 1),Const (IntVal 2),Var "v"]) "") 
                        ([("a", INT), ("b", INT), ("c", INT)], 0)
      @?= (Right "a, b, c = 1, 2, v\n", [], []),
-    testCase "Assignment to array indices"
+    testCase "Assignment to array slices"
      $ runGen (genStmt (SDef [Slice "a" [Const (IntVal 0)]] [Const (IntVal 5)]) "") 
                        ([("a", DArray [Const (IntVal 5)] INT)], 0)
      @?= (Right "a[0] = 5\n", [], []),
+    testCase "Assignment to multiple array slices"
+     $ runGen (genStmt (SDef [Slice "a" [Const (IntVal 0)],
+                              Slice "a" [Const (IntVal 1)],
+                              Slice "a" [Const (IntVal 2)]] 
+                             [Const (IntVal 5),
+                              Const (IntVal 42),
+                              Const (IntVal 1337)]) "") 
+                       ([("a", DArray [Const (IntVal 5)] INT)], 0)
+     @?= (Right "a[0], a[1], a[2] = 5, 42, 1337\n", [], []),
     testCase "Assignment of entire array of ints"
      $ runGen (genStmt (SDef [Var "a"] 
                              [Array [Const (IntVal 1),Const (IntVal 2),Const (IntVal 3)]]) "") 
