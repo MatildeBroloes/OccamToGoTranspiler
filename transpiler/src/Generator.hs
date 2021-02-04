@@ -274,10 +274,11 @@ genStmt (SDef ((Slice name exps):vs) (e:es)) i =
   do
    s <- genExp (Slice name exps)
    t <- getType name
+   defs <- genStmt (SDef vs es) i
    exp <- case t of
             DArray _ (DArray aes d) -> genArray e (aes, d)
             _ -> genExp e
-   return $ i ++ s ++ " = " ++ exp
+   return $ i ++ s ++ " = " ++ exp ++ "\n" ++ defs
 genStmt (SDecl [] d stmt) i = genStmt stmt i
 genStmt (SDecl (e:es) s stmt) i = 
   do
@@ -365,16 +366,44 @@ genProg :: Program -> Gen ()
 genProg [FFun name args specs stmt] =
   do
    head <- genHead name args specs
-   cs <- return "  defer close(out)"
+   co <- return "  defer close(out)"
+   ce <- return "  defer close(err)"
    st <- genStmt stmt "  "
-   fun <- return $ head ++ "{\n" ++ cs ++ "\n\n" ++ st ++ "\n}"
+   fun <- return $ head ++ "{\n" ++ co ++ "\n" ++ ce ++ "\n\n" ++ st ++ "\n}"
    _ <- addImport "import \"fmt\"\n"
+   _ <- addImport "import \"sync\"\n"
+   _ <- addImport "import \"os\"\n"
+   _ <- addImport "import \"bufio\"\n"
    main <- return $ unlines ["func main() {",
-                             "  out := make(chan byte, 10)\n",
-                             "  go " ++ name ++"(out)\n",
-                             "  for i := range out {",
-                             "    fmt.Print(string(i))",
-                             "  }",
+                             "  in, out, err := make(chan byte, 10), make(chan byte, 10), make(chan byte, 10)\n",
+                             "  var wg_main sync.WaitGroup\n",
+                             "  wg_main.Add(1)",
+                             "  go func() {",
+                             "    " ++ name ++ "(in, out, err)\n",
+                             "    wg_main.Done()",
+                             "  }()\n",
+                             "  go func() {",
+                             "    input := bufio.NewReader(os.Stdin)",
+                             "    for {",
+                             "      char, _, err := input.ReadRune()",
+                             "      if err == nil {in <- byte(char)}", -- maybe put a timer on this action?
+                             "    }",
+                             "  }()\n",
+                             "  wg_main.Add(1)",
+                             "  go func() {",
+                             "    for i := range out {",
+                             "      fmt.Print(string(i))",
+                             "    }",
+                             "    wg_main.Done()",
+                             "  }()\n",
+                             "  wg_main.Add(1)",
+                             "  go func() {",
+                             "    for i := range err {",
+                             "      fmt.Print(string(i))",
+                             "    }",
+                             "    wg_main.Done()",
+                             "  }()\n",
+                             "  wg_main.Wait()",
                              "}"]
    write $ fun ++ "\n\n" ++ main
 genProg (x:xs) = do 
