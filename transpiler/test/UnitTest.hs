@@ -685,11 +685,11 @@ assignments = testGroup "Assignments"
      $ runGen (genStmt (SDef [Var "a", Var "b", Var "c"] 
                              [Const (IntVal 1),Const (IntVal 2),Var "v"]) "") 
                        ([("a", INT), ("b", INT), ("c", INT)], 0)
-     @?= (Right "a = 1\nb = 2\nc = v\n", [], []),
+     @?= (Right "a, b, c = 1, 2, v\n", [], []),
     testCase "Assignment to array indices"
      $ runGen (genStmt (SDef [Slice "a" [Const (IntVal 0)]] [Const (IntVal 5)]) "") 
                        ([("a", DArray [Const (IntVal 5)] INT)], 0)
-     @?= (Right "a[0] = 5", [], []),
+     @?= (Right "a[0] = 5\n", [], []),
     testCase "Assignment of entire array of ints"
      $ runGen (genStmt (SDef [Var "a"] 
                              [Array [Const (IntVal 1),Const (IntVal 2),Const (IntVal 3)]]) "") 
@@ -900,43 +900,122 @@ program = testGroup "Programs"
      $ runGen (genFun (FFun "wham" [Arg [Var "bam", Var "pow"] (SVar INT)] [] (SDecl [Var "c"] (SChan INT) (SCall (Call "puff" [Var "bam", Var "pow", Var "c"]))))) ([], 0)
      @?= (Right "func wham(bam, pow int) {\n  var c = make(chan int)\n  puff(bam, pow, c)\n}", [], []),
     testCase "Program: generating generic function"
-     $ runGen (genProg [FFun "test" [Arg [Var "out"] (SChan BYTE)] [] (SDecl [Var "c"] (SVar INT) (SDef [Var "c"] [Const (IntVal 5)]))]) ([], 0)
-     @?= (Right (), ["func test(out chan byte) {\n  defer close(out)\n\n  var c int\n  c = 5\n\n}" ++ "\n\n" ++
+     $ runGen (genProg [FFun "test" [Arg [Var "in", Var "out", Var "err"] (SChan BYTE)] [] (SDecl [Var "c"] (SVar INT) (SDef [Var "c"] [Const (IntVal 5)]))]) ([], 0)
+     @?= (Right (), ["func test(in, out, err chan byte) {\n  defer close(out)\n  defer close(err)\n\n  var c int\n  c = 5\n\n}" ++ "\n\n" ++
                      unlines ["func main() {",
-                              "  out := make(chan byte, 10)\n",
-                              "  go test(out)\n",
-                              "  for i := range out {",
-                              "    fmt.Print(string(i))",
-                              "  }",
+                              "  in, out, err := make(chan byte, 10), make(chan byte, 10), make(chan byte, 10)\n",
+                              "  var wg_main sync.WaitGroup\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    test(in, out, err)\n",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  go func() {",
+                              "    input := bufio.NewReader(os.Stdin)",
+                              "    for {",
+                              "      char, _, err := input.ReadRune()",
+                              "      if err == nil {in <- byte(char)}",
+                              "    }",
+                              "  }()\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    for i := range out {",
+                              "      fmt.Print(string(i))",
+                              "    }",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    for i := range err {",
+                              "      fmt.Print(string(i))",
+                              "    }",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  wg_main.Wait()",
                               "}"]
-                    ], ["import \"fmt\"\n"]),
+                    ], ["import \"fmt\"\n", 
+                        "import \"sync\"\n", 
+                        "import \"os\"\n", 
+                        "import \"bufio\"\n"]),
     testCase "Program: generating empty program"
      $ runGen (genProg []) ([], 0)
      @?= (Right (), [], []),
     testCase "Program: generating program importing multiple libraries"
-     $ runGen (genProg [FFun "help" [Arg [Var "out"] (SChan BYTE)] [] (SSeq [SSend (Chan "out") (Const (ByteVal (CharVal 'a'))),
+     $ runGen (genProg [FFun "help" [Arg [Var "in", Var "out", Var "err"] (SChan BYTE)] [] (SSeq [SSend (Chan "out") (Const (ByteVal (CharVal 'a'))),
                                                                              SExit])]) ([], 0)
-     @?= (Right (), ["func help(out chan byte) {\n  defer close(out)\n\n  out <- 'a'\n  os.Exit(1)\n}" ++ "\n\n" ++
+     @?= (Right (), ["func help(in, out, err chan byte) {\n  defer close(out)\n  defer close(err)\n\n  out <- 'a'\n  os.Exit(1)\n}" ++ "\n\n" ++
                      unlines ["func main() {",
-                              "  out := make(chan byte, 10)\n",
-                              "  go help(out)\n",
-                              "  for i := range out {",
-                              "    fmt.Print(string(i))",
-                              "  }",
+                              "  in, out, err := make(chan byte, 10), make(chan byte, 10), make(chan byte, 10)\n",
+                              "  var wg_main sync.WaitGroup\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    help(in, out, err)\n",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  go func() {",
+                              "    input := bufio.NewReader(os.Stdin)",
+                              "    for {",
+                              "      char, _, err := input.ReadRune()",
+                              "      if err == nil {in <- byte(char)}",
+                              "    }",
+                              "  }()\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    for i := range out {",
+                              "      fmt.Print(string(i))",
+                              "    }",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    for i := range err {",
+                              "      fmt.Print(string(i))",
+                              "    }",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  wg_main.Wait()",
                               "}"]
-                    ], ["import \"os\"\n", "import \"fmt\"\n"]),
+                    ], ["import \"os\"\n",
+                        "import \"fmt\"\n", 
+                        "import \"sync\"\n", 
+                        "import \"os\"\n", 
+                        "import \"bufio\"\n"]),
     testCase "Program: generating program importing libraries multipe times"
-     $ generate [FFun "help" [Arg [Var "out"] (SChan BYTE)] [] 
+     $ generate [FFun "help" [Arg [Var "in", Var "out", Var "err"] (SChan BYTE)] [] 
                  (SSeq [SSend (Chan "out") (Const (ByteVal (CharVal 'a'))),
                         SExit, SExit])]
-     @?= (["import \"os\"\n", "import \"fmt\"\n", "\n",
-           "func help(out chan byte) {\n  defer close(out)\n\n  out <- 'a'\n  os.Exit(1)\n  os.Exit(1)\n}" ++ "\n\n" ++
+     @?= (["import \"os\"\n", "import \"fmt\"\n", "import \"sync\"\n", "import \"bufio\"\n", "\n",
+           "func help(in, out, err chan byte) {\n  defer close(out)\n  defer close(err)\n\n  out <- 'a'\n  os.Exit(1)\n  os.Exit(1)\n}" ++ "\n\n" ++
                      unlines ["func main() {",
-                              "  out := make(chan byte, 10)\n",
-                              "  go help(out)\n",
-                              "  for i := range out {",
-                              "    fmt.Print(string(i))",
-                              "  }",
+                              "  in, out, err := make(chan byte, 10), make(chan byte, 10), make(chan byte, 10)\n",
+                              "  var wg_main sync.WaitGroup\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    help(in, out, err)\n",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  go func() {",
+                              "    input := bufio.NewReader(os.Stdin)",
+                              "    for {",
+                              "      char, _, err := input.ReadRune()",
+                              "      if err == nil {in <- byte(char)}",
+                              "    }",
+                              "  }()\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    for i := range out {",
+                              "      fmt.Print(string(i))",
+                              "    }",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  wg_main.Add(1)",
+                              "  go func() {",
+                              "    for i := range err {",
+                              "      fmt.Print(string(i))",
+                              "    }",
+                              "    wg_main.Done()",
+                              "  }()\n",
+                              "  wg_main.Wait()",
                               "}"]], Nothing)
   ]
 

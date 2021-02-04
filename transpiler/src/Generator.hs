@@ -231,12 +231,9 @@ genSelect ((SCase x):xs) i = do
                               
 -- Helper function for generating wait group functions for parallels
 genWG :: Gen String
---genWG = return "wg"
 genWG = do
          num <- getWG
          return $ "wg_" ++ (show num)
---genWG = let rand = mkStdGen 42
---         in return $ "wg_" ++ (take 4 $ randomRs ('0','9') rand)
 
 genWGFun :: Stmt -> String -> String -> Gen String
 genWGFun s i wg = do
@@ -254,31 +251,39 @@ genWGFuns (s:ss) i wg = do
                          funs <- genWGFuns ss i wg
                          return $ fun ++ "\n" ++ funs
 
-
-
+-- Helper function for assignments (used to assign multiple vars at once)
+defHelper :: [Exp] -> [Exp] -> Gen (String, String)
+defHelper [(Var s)] [e] = 
+  do
+   v <- genExp (Var s)
+   t <- getType v
+   exp <- case t of
+            DArray exps d -> genArray e (exps, d)
+            _ -> genExp e
+   return $ (v, exp)
+defHelper [(Slice name exps)] [e] = 
+  do
+   s <- genExp (Slice name exps)
+   t <- getType name
+   exp <- case t of
+            DArray _ (DArray aes d) -> genArray e (aes, d)
+            _ -> genExp e
+   return $ (s, exp)
+defHelper (v:vs) (e:es) =
+  do
+   (r1, r2) <- defHelper [v] [e]
+   (r1s, r2s) <- defHelper vs es
+   return $ (r1 ++ ", " ++ r1s, r2 ++ ", " ++ r2s)
+   
 
 -- Generator for Statements
 -- The second input argument is for ensuring correct indentation
 genStmt :: Stmt -> String -> Gen String
 genStmt (SDef [] []) _ = return ""
-genStmt (SDef ((Var s):vs) (e:es)) i = 
+genStmt (SDef vs es) i =
   do
-   v <- genExp (Var s)
-   t <- getType v
-   defs <- genStmt (SDef vs es) i
-   exp <- case t of
-            DArray exps d -> genArray e (exps, d)
-            _ -> genExp e
-   return $ i ++ v ++ " = " ++ exp ++ "\n" ++ defs
-genStmt (SDef ((Slice name exps):vs) (e:es)) i =
-  do
-   s <- genExp (Slice name exps)
-   t <- getType name
-   defs <- genStmt (SDef vs es) i
-   exp <- case t of
-            DArray _ (DArray aes d) -> genArray e (aes, d)
-            _ -> genExp e
-   return $ i ++ s ++ " = " ++ exp ++ "\n" ++ defs
+   (vars, exps) <- defHelper vs es
+   return $ i ++ vars ++ " = " ++ exps ++ "\n"
 genStmt (SDecl [] d stmt) i = genStmt stmt i
 genStmt (SDecl (e:es) s stmt) i = 
   do
