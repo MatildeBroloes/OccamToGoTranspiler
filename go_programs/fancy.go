@@ -6,14 +6,12 @@ import "os"
 import "bufio"
 
 func read0s(in chan byte, out chan int) {
-  var tmp byte
-  tmp = <-in
+  <-in
   out <- 0
 }
 
 func read1s(in chan byte, out chan int) {
-  var tmp byte
-  tmp = <-in
+  <-in
   out <- 1
 }
 
