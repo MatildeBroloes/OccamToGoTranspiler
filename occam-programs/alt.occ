@@ -1,0 +1,26 @@
+PROC alt(CHAN OF BYTE in, out, err)
+  BYTE tmp:
+  CHAN OF BYTE c1, c2:
+  SEQ
+    out ! 'H'
+    out ! 'e'
+    out ! 'j'
+    out ! 10
+    PAR
+      SEQ j = 0 FOR 2
+        c1 ! '?'
+      SEQ k = 0 FOR 2
+        c2 ! '!'
+      SEQ i = 0 FOR 4
+        ALT
+          i < 2 & c1 ? tmp
+            out ! tmp
+          i >= 2 & c2 ? tmp
+            out ! tmp
+    out ! 10
+    out ! 'D'
+    out ! 'o'
+    out ! 'n'
+    out ! 'e'
+    out ! 10
+:
