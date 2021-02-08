@@ -4,14 +4,14 @@ import os
 mean1 = 0
 for x in range(0, 100):
   start = time.time()
-  os.system('echo "40\n" | ../occam-programs/simple')
+  os.system('../occam-programs/count')
   end = time.time()
   mean1 = mean1 + (end - start)
 
 mean2 = 0
 for x in range(0, 100):
   start = time.time()
-  os.system('echo "4\n" | ../occam-programs/fancy')
+  os.system('echo "40\n" | ../occam-programs/simple')
   end = time.time()
   mean2 = mean2 + (end - start)
 
