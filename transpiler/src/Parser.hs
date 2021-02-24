@@ -457,7 +457,7 @@ writeParse f s = do
                   p <- hGetContents file
                   let ast = parseString p
                    in case ast of
-                        Left err -> putStrLn "hej" --(show err)
+                        Left err -> putStrLn (show err)
                         Right a -> do
                                     writeFile (s ++ ".txt") (show a)
                   hClose file
