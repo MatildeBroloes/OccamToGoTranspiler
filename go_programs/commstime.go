@@ -33,8 +33,9 @@ func succ(cin, cout chan int, n int) {
 }
 
 func consume(cin chan int, n int) {
+  var tmp int
   for i := 0; i < 0 + n; i++ {
-    <-cin
+    tmp = <-cin
   }
 }
 
