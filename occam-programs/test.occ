@@ -1,0 +1,6 @@
+PROC test(CHAN OF BYTE in, out, err)
+  SEQ
+    SEQ i = 0 FOR 10
+        out ! BYTE (i + 48)
+    out ! 10
+:

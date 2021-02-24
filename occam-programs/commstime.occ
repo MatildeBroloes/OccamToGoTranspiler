@@ -1,0 +1,62 @@
+PROC prefix(CHAN OF INT cin, cout, INT n)
+  INT v:
+  SEQ
+    v := 0
+    SEQ i = 0 FOR n
+      SEQ
+        cout ! v
+        cin ? v
+:
+
+PROC delta(CHAN OF INT cin, cout1, cout2, INT n)
+  INT v:
+  SEQ
+    SEQ i = 0 FOR n
+      SEQ
+        cin ? v
+        cout1 ! v
+        cout2 ! v
+:
+
+PROC succ(CHAN OF INT cin, cout, INT n)
+  INT v:
+  SEQ
+    SEQ i = 0 FOR n
+      SEQ
+        cin ? v
+        cout ! (v+1)
+:
+
+PROC consume(CHAN OF INT cin, INT n)
+  INT tmp:
+  SEQ
+    SEQ i = 0 FOR n
+      SEQ
+        cin ? tmp
+:
+
+PROC commstime(CHAN OF BYTE in, out)
+  CHAN OF INT a, b, c, d:
+  BYTE read:
+  INT n, n1, n2, n3, n4:
+  BOOL reading:
+  SEQ
+    reading := TRUE
+    n := 0
+    WHILE reading
+      SEQ
+        in ? read
+        IF
+          read = 10
+            reading := FALSE
+          TRUE
+            n := (n*10) + ((INT read) - 48)
+        out ! read
+    n1, n2, n3, n4 := n, n, n, n
+    PAR
+      prefix(c, a, n1)
+      delta(a, b, d, n2)
+      succ(b, c, n3)
+      consume(d, n4)
+    STOP
+:
