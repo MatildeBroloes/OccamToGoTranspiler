@@ -639,6 +639,7 @@ expFun = testGroup "Expressions"
     testCase "Expressions: generate conversion"
      $ runGen (genExp (Conv INT (Var "a"))) ([], 0)
      @?= (Right "int(a)", [], [])
+-- test operators in expressions (especially precedence, and nested oper exps)
   ]
 
 fargsFun :: TestTree
