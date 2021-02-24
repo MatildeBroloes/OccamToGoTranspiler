@@ -1,0 +1,66 @@
+PROC fib(CHAN OF BYTE in, out, err)
+  INT fib0, fib1, res:
+  INT n, m, msg:
+  BYTE read:
+  BOOL d:
+  SEQ
+    d := TRUE
+    n := 0
+    out ! 'I'
+    out ! 'n'
+    out ! 'p'
+    out ! 'u'
+    out ! 't'
+    out ! 58
+    out ! 32
+    WHILE d
+      SEQ
+       in ? read
+       IF
+         read = 10
+           d := FALSE
+         TRUE
+           SEQ
+             n := (n*10) + ((INT read) - 48)
+       out ! read
+    fib0 := 0
+    fib1 := 1
+    IF
+      n = 0
+        SEQ
+          out ! BYTE (fib0 + 48)
+          out ! 10
+      n = 1
+        SEQ
+          out ! BYTE (fib1 + 49)
+          out ! 10
+      (n > 46) OR (n < 0)
+        SEQ
+          err ! 'I'
+          err ! 'n'
+          err ! 'p'
+          err ! 'u'
+          err ! 't'
+          err ! 32
+          err ! 'e'
+          err ! 'r'
+          err ! 'r'
+          err ! 'o'
+          err ! 'r'
+          err ! 10
+      TRUE
+        SEQ
+          res := 0
+          SEQ i = 0 FOR (n - 1)
+            SEQ
+              res := fib0 + fib1
+              fib0, fib1 := fib1, res
+          m := 1000000000
+          WHILE m >= 1
+            SEQ
+              msg := res/m
+              res := res REM m
+              m := m/10
+              out ! BYTE (msg + 48)
+          out ! 10
+:
