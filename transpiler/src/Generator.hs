@@ -120,6 +120,7 @@ genOper Less = return "<"
 genOper Greater = return ">"
 genOper Geq = return ">="
 genOper Leq = return "<="
+genOper Rem = return "%"
 genOper And = return "&&"
 genOper Or = return "||"
 
@@ -331,7 +332,7 @@ genStmt (SFor e1 e2 e3 stmt) i =
    base <- genExp e2
    count <- genExp e3
    body <- genStmt stmt (i ++ "  ")
-   lim <- return $ show ((read base) + (read count))
+   lim <- return $ base ++ " + " ++ count -- change here
    return $ concat [i, "for ", index, " := ", base, "; ", index, " < ", lim, 
                     "; ", index, "++ {\n", body, "\n", i, "}"]
 genStmt (SCall e) i = do f <- genExp e; return $ i ++ f

@@ -160,6 +160,7 @@ parseExp = try (do
                    <|> try (do symbol "<"; o2 <- parseOperand; return $ Oper Less o1 o2)
                    <|> try (do symbol ">="; o2 <- parseOperand; return $ Oper Geq o1 o2)
                    <|> try (do symbol ">"; o2 <- parseOperand; return $ Oper Greater o1 o2)
+                   <|> try (do symbol "REM"; o2 <- parseOperand; return $ Oper Rem o1 o2)
                    <|> try (do symbol "AND"; o2 <- parseOperand; return $ Oper And o1 o2)
                    <|> try (do symbol "OR"; o2 <- parseOperand; return $ Oper Or o1 o2)
                    <|> (do return $ o1))
@@ -456,7 +457,7 @@ writeParse f s = do
                   p <- hGetContents file
                   let ast = parseString p
                    in case ast of
-                        Left err -> putStrLn (show err)
+                        Left err -> putStrLn "hej" --(show err)
                         Right a -> do
                                     writeFile (s ++ ".txt") (show a)
                   hClose file

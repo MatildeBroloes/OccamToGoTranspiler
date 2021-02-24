@@ -61,7 +61,7 @@ type VName = String
 type FName = String
 
 -- Simplified subset of dyadic operators
-data Op = Plus | Minus | Times | Div | Mod | Eq | Neq | Less | Greater | Geq | Leq | And | Or
+data Op = Plus | Minus | Times | Div | Mod | Eq | Neq | Less | Greater | Geq | Leq | Rem | And | Or
   deriving (Eq, Show, Read)
 
 type Program = [Fun]
