@@ -35,7 +35,7 @@ PROC consume(CHAN OF INT cin, INT n)
         cin ? tmp
 :
 
-PROC commstime(CHAN OF BYTE in, out)
+PROC commstime(CHAN OF BYTE in, out, err)
   CHAN OF INT a, b, c, d:
   BYTE read:
   INT n, n1, n2, n3, n4:
