@@ -1,0 +1,38 @@
+PROC read0s(CHAN OF BYTE in, CHAN OF INT out)
+  BYTE tmp:
+  SEQ
+    in ? tmp
+    out ! (INT tmp) - 47 
+:
+
+PROC read1s(CHAN OF BYTE in, CHAN OF INT out)
+  BYTE tmp:
+  SEQ
+    in ? tmp
+    out ! (INT tmp) - 46 
+:
+
+PROC complex(CHAN OF BYTE in, out, err)
+  CHAN OF BYTE in1, in2:
+  CHAN OF INT c1, c2:
+  BYTE v:
+  INT tmp:
+  SEQ
+    in ? v
+    PAR
+      SEQ
+        in2 ! v
+        in1 ! v
+      read0s(in1, c1)
+      read1s(in2, c2)
+      SEQ i = 0 FOR 2
+        ALT
+          c1 ? tmp
+            SEQ
+              out ! BYTE(tmp + 48)
+              out ! 10
+          c2 ? tmp
+            SEQ
+              out ! BYTE(tmp + 48)
+              out ! 10
+:
